@@ -60,7 +60,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 	// printf("Color %d\n", iters);
 	// float t = hit_sphere(vec3(0,0,-1), 0.5, r);
 	// printf("%p, %d\n", world, world->list_size);
-	float max = MAXFLOAT;
+	float max = FLT_MAX;
 	ray curRay = r;
 	vec3 curLight = vec3(1,1,1);
 	for(int i = 0; i < 200; i++){

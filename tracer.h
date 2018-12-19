@@ -1,5 +1,6 @@
 #include <iostream>
 #include <curand_kernel.h>
+#include <cfloat>
 using namespace std;
 
 class vec3{
