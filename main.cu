@@ -142,8 +142,8 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, fl
 }
 
 int main(){
-	int x = 2000;
-	int y = 1000;
+	int x = 200;
+	int y = 100;
 	int aaSamples = 64;
 	float* aaRands;
 	vec3 *imgBuf, *d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);

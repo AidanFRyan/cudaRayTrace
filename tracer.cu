@@ -322,7 +322,8 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	if(dot(impacting.direction(), rec.normal)>0){
 		outward_normal = -rec.normal;
 		ni_nt = ior;
-		cosine = ior * dot(impacting.direction(), rec.normal)/impacting.direction().length();
+		cosine = dot(impacting.direction(), rec.normal)/impacting.direction().length();
+		cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
 	}
 	else{
 		outward_normal = rec.normal;
@@ -333,7 +334,7 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 		reflect_prob = schlick(cosine, ior);
 	}
 	else{
-		scattered = ray(rec.p, reflected);
+		// scattered = ray(rec.p, reflected);
 		reflect_prob = 1;
 	}
 	if(curand_uniform(state) < reflect_prob){
@@ -348,7 +349,7 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 __device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& refracted){
 	vec3 uv = unit_vector(v);
 	float dt = dot(uv, n);
-	float discriminant = 1.0f - ni_nt*ni_nt*(1-dt*dt);
+	float discriminant = 1-ni_nt*ni_nt*(1-dt*dt);
 	if(discriminant > 0){
 		refracted = ni_nt*(uv-n*dt) - n*sqrtf(discriminant);
 		return true;
