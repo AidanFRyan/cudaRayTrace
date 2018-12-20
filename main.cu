@@ -63,7 +63,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 	float max = FLT_MAX;
 	ray curRay = r;
 	vec3 curLight = vec3(1,1,1);
-	for(int i = 0; i < 200; i++){
+	for(int i = 0; i < 10; i++){
 		hit_record rec;
 		// vec3 N = unit_vector(r.p(t) - vec3(0,0,-1));
 		if(world->hit(curRay, 0.001, max, rec)){
@@ -142,9 +142,12 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, fl
 }
 
 int main(){
-	int x = 200;
-	int y = 100;
-	int aaSamples = 64;
+	int count;
+	cudaGetDeviceCount(&count);
+	cudaSetDevice(--count);
+	int x = 2000;
+	int y = 1000;
+	int aaSamples = 128;
 	float* aaRands;
 	vec3 *imgBuf, *d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	curandState* state;
@@ -168,7 +171,7 @@ int main(){
 	// printf("Done initting\n");
 	cudaMalloc((void**)&d_img, sizeof(vec3)*x*y);
 	cudaDeviceSynchronize();
-	imageGenerator<<<4, 1024>>>(x, y, 16, cam, aaSamples, aaRands, world, d_img, state);
+	imageGenerator<<<4, 512>>>(x, y, 16, cam, aaSamples, aaRands, world, d_img, state);
 	cudaDeviceSynchronize();
 	cudaMemcpy(imgBuf, d_img, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
