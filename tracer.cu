@@ -271,32 +271,30 @@ void camera::get_ray(const float& u, const float& v, ray& r){
 	r = ray(origin, ulc+u*horizontal-v*vertical-origin);
 }
 
-lambertian::lambertian(const vec3& a, curandState* st){
+lambertian::lambertian(const vec3& a){
 	albedo = a;
-	state = st;
 }
 
-__device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const{
+__device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 	vec3 target = rec.p+rec.normal+random_in_unit_sphere(state);
 	scattered = ray(rec.p, target-rec.p);
 	att = albedo;
 	return true;
 }
 
-metal::metal(const vec3& a, const float& f, curandState* st){
+metal::metal(const vec3& a, const float& f){
 	albedo = a;
 	if(f<1)
 		fuzzy = f;
 	else
 		fuzzy = 1;
-	state = st;
 }
 
 __device__ vec3 reflect(const vec3& v, const vec3& n){
 	return v - 2*dot(v,n)*n;
 }
 
-__device__ bool metal::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const{
+__device__ bool metal::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 	vec3 reflected = reflect(unit_vector(impacting.direction()), rec.normal);
 	if(fuzzy >= 0.01)
 		scattered = ray(rec.p, reflected + fuzzy*random_in_unit_sphere(state));
@@ -306,12 +304,11 @@ __device__ bool metal::scatter(const ray& impacting, const hit_record& rec, vec3
 	return (dot(scattered.direction(), rec.normal) > 0);
 }
 
-dielectric::dielectric(const float& i, curandState* s){
+dielectric::dielectric(const float& i){
 	ior = i;
-	state = s;
 }
 
-__device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const{
+__device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 	vec3 outward_normal;
 	vec3 reflected = reflect(impacting.direction(), rec.normal);
 	float ni_nt;
@@ -319,22 +316,23 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	vec3 refracted;
 	float reflect_prob;
 	float cosine;
-	if(dot(impacting.direction(), rec.normal)>0){
+	float dotted = dot(impacting.direction(), rec.normal);
+	if(dotted>0){
 		outward_normal = -rec.normal;
 		ni_nt = ior;
-		cosine = dot(impacting.direction(), rec.normal)/impacting.direction().length();
+		cosine = dotted/impacting.direction().length();
 		cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
 	}
 	else{
 		outward_normal = rec.normal;
 		ni_nt = 1.0f/ior;
-		cosine = -dot(impacting.direction(), rec.normal)/impacting.direction().length();
+		cosine = -dotted/impacting.direction().length();
+		// cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
 	}
 	if(refract(impacting.direction(), outward_normal, ni_nt, refracted)){
 		reflect_prob = schlick(cosine, ior);
 	}
 	else{
-		// scattered = ray(rec.p, reflected);
 		reflect_prob = 1;
 	}
 	if(curand_uniform(state) < reflect_prob){
@@ -342,14 +340,17 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	}
 	else{
 		scattered = ray(rec.p, refracted);
+		// printf("refracted\n");
 	}
 	return true;
 }
 
 __device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& refracted){
 	vec3 uv = unit_vector(v);
+	// vec3 un = unit_vector(n);
 	float dt = dot(uv, n);
-	float discriminant = 1-ni_nt*ni_nt*(1-dt*dt);
+	// pr  intf("%f\n", dt);
+	float discriminant = 1.0f-ni_nt*ni_nt*(1.0f-dt*dt);
 	if(discriminant > 0){
 		refracted = ni_nt*(uv-n*dt) - n*sqrtf(discriminant);
 		return true;

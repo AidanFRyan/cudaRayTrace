@@ -122,14 +122,13 @@ public:
 
 class material{
 public:
-	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const = 0;
-	curandState* state;
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const = 0;
 };
 
 class lambertian : public material{
 public:
-	__host__ __device__ lambertian(const vec3& a, curandState* st);
-	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const;
+	__host__ __device__ lambertian(const vec3& a);
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
 	vec3 albedo;
 };
 
@@ -137,8 +136,8 @@ __device__ vec3 reflect(const vec3& v, const vec3& n);
 
 class metal : public material{
 public:
-	__host__ __device__ metal(const vec3& a, const float& f, curandState* st);
-	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const;
+	__host__ __device__ metal(const vec3& a, const float& f);
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
 	vec3 albedo;
 	float fuzzy;
 };
@@ -148,8 +147,8 @@ __device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& 
 
 class dielectric : public material{
 public:
-	__host__ __device__ dielectric(const float& i, curandState* s);
-	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered) const;
+	__host__ __device__ dielectric(const float& i);
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
 	__device__ float schlick(const float& cosine, const float& indor) const;
 	float ior;
 };
