@@ -12,15 +12,7 @@
 // 		return (-b - sqrtf(discriminant))/(2*a);
 // 	}
 // }
-__device__ vec3 random_in_unit_sphere(curandState* state){
-	// curandState state;
-	// printf("Finding rand\n");
-	vec3 p;
-	do {
-		p = 2*vec3(curand_uniform(state),curand_uniform(state),curand_uniform(state)) - vec3(1,1,1);
-	} while(p.squared_length() >= 1);
-	return p;
-}
+
 
 
 
@@ -30,9 +22,10 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize){
 		// hitable* list[2];
 		list[0] = new sphere(vec3(0,0,-1), 0.5, new lambertian(vec3(0.8f, 0.3f, 0.3f)));
 		list[1] = new sphere(vec3(0,-100.5, -1), 100, new lambertian(vec3(0.8f, 0.8f, 0.0f)));
-		list[2] = new sphere(vec3(1, 0, -1), 0.5, new metal(vec3(0.8f, 0.6f, 0.2f), 0));
+		list[2] = new sphere(vec3(1, 0, -1), 0.5, new metal(vec3(0.8f, 0.6f, 0.2f), 0.2f));
 		// list[3] = new sphere(vec3(-1, 0, -1), 0.5, new metal(vec3(0.8f, 0.8f, 0.8f), 1.0f));
-		list[3] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
+		// list[3] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
+		list[3] = new sphere(vec3(2, 1, 0), 0.5f, new light(vec3(2, 2, 2)));
 		// list[4] = new sphere(vec3(0,1,-1), 0.5f, new metal(vec3(0.8f, 0.8f, 0.9f), 0));
 		*world = new hitable_list(list, wSize);
 		// printf("wrldGen: %p %p\n", (*world)->list, (*world)->list[0]);
@@ -59,13 +52,31 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 	float max = FLT_MAX;
 	ray curRay = r;
 	vec3 curLight = vec3(1,1,1);
-	for(int i = 0; i < 10; i++){
+	for(int i = 0; i < 20; i++){
 		hit_record rec;
 		// vec3 N = unit_vector(r.p(t) - vec3(0,0,-1));
 		if(world->hit(curRay, 0.001, max, rec)){
 			ray scattered;
 			vec3 attenuation;
-			if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
+			// int index = threadIdx.x + blockIdx.x*blockDim.x;
+			// if (index == 0)
+			// 	printf("scattering %f, %f, %f\n", r.direction().e[0], r.direction().e[1], r.direction().e[2]);//, outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
+			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
+				curLight *= attenuation;
+				if(curLight.x() > 255){
+					curLight.e[0] = 255;
+				}
+				if(curLight.y() > 255){
+					curLight.e[1] = 255;
+				}
+				if(curLight.z() > 255){
+					curLight.e[2] = 255;
+				}
+				return curLight;
+				// printf("%f %f %f\n", attenuation.r(), attenuation.g(), attenuation.b());
+				// break;
+			}
+			else if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
 				curLight *= attenuation;
 				curRay = scattered;
 			}
@@ -79,6 +90,8 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 			float t = 0.5f*(unit_direction.y()+1.0f);
 			vec3 c = (1.0f-t)*vec3(1, 1, 1) + t*vec3(0.5f, 0.7f, 1);
 			return curLight * c;
+			
+			// return curLight;
 		}
 	}
 	return vec3(0.0f, 0.0f, 0.0f);
@@ -127,7 +140,7 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 				// 	v = (pixY+1) / y;
 				// }
 				ray r;
-				cam.get_ray(u, v, r);
+				cam.get_ray(u, v, r, &state[pixelNum+i]);
 				col += color(r, *world, &state[pixelNum+i]);
 			}
 			col /= aa;
@@ -139,16 +152,20 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 
 int main(){
 	int count;
-	cudaGetDeviceCount(&count);
-	cudaSetDevice(--count);
-	int x = 2000;
-	int y = 1000;
-	int aaSamples = 512;
+	// cudaGetDeviceCount(&count);
+	// cudaSetDevice(--count);
+	int x = 1920;
+	int y = 1080;
+	int aaSamples = 256;
 	// float** aaRands;
 	vec3 *imgBuf, *d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	curandState* state;
 	
-	camera cam;
+	vec3 lookFrom(-3,3,2);
+	vec3 lookAt(0,0,-1);
+	float dist = (lookFrom-lookAt).length();
+	float ap = 2.0f;
+	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 20, float(x)/float(y), ap, dist);
 	// hitable *list[2];
 	hitable ** list;
 	hitable_list **world;// = new hitable_list(list, 2);

@@ -11,6 +11,11 @@ vec3::vec3(float e0, float e1, float e2){
 	e[1] = e1;
 	e[2] = e2;
 }
+vec3::vec3(const vec3& v){
+	e[0] = v.e[0];
+	e[1] = v.e[1];
+	e[2] = v.e[2];
+}
 float vec3::x() const{
 	return e[0];
 }
@@ -30,6 +35,12 @@ float vec3::b() const{
 	return e[2];
 }
 
+vec3& vec3::operator=(const vec3& v){
+	e[0] = v.e[0];
+	e[1] = v.e[1];
+	e[2] = v.e[2];
+	return *this;
+}
 const vec3& vec3::operator+() const{
 	return *this;
 }
@@ -259,6 +270,15 @@ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record&
 // 	cudaDeviceSynchronize();
 // 	list = copy;
 // }
+__device__ vec3 random_in_unit_disk(curandState* state){
+	// curandState state;
+	// curand_init(1234, threadIdx.x+blockDim.x*blockIdx.x, 0, &state);
+	vec3 p;
+	do{
+		p = 2.0f*vec3(curand_uniform(state), curand_uniform(state), 0) - vec3(1,1,0);
+	}while(dot(p,p) >= 1.0f);
+	return p;
+}
 
 camera::camera(){
 	ulc = vec3(-2, 1, -1);
@@ -267,12 +287,54 @@ camera::camera(){
 	origin = vec3(0,0,0);
 }
 
-void camera::get_ray(const float& u, const float& v, ray& r){
-	r = ray(origin, ulc+u*horizontal-v*vertical-origin);
+camera::camera(float vfov, float aspect){
+	vfov *= CUDA_PI/180;
+	float halfHeight = tanf(vfov/2);
+	float halfWidth = aspect*halfHeight;
+	ulc = vec3(-halfWidth, halfHeight, -1);
+	horizontal = vec3(2*halfWidth, 0, 0);
+	vertical = vec3(0,2*halfHeight,0);
+	origin = vec3(0,0,0);
+}
+camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect){
+	// vec3 u, v, w;
+	lens_radius=0;
+	vfov *= CUDA_PI/180;
+	float halfHeight = tanf(vfov/2);
+	float halfWidth = aspect*halfHeight;
+	origin = o;
+	w = unit_vector(o-lookAt);
+	u = unit_vector(cross(vup, w));
+	v = cross(w, u);
+	ulc = vec3(-halfWidth, halfHeight, -1);
+	ulc = origin - halfWidth*u + halfHeight*v - w;
+	horizontal = 2*halfWidth*u;
+	vertical = 2*halfHeight*v;
+}
+camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float aperture, float focus_dist){
+	// vec3 u, v, w;
+	lens_radius = aperture/2;
+	vfov *= CUDA_PI/180;
+	float halfHeight = tanf(vfov/2);
+	float halfWidth = aspect*halfHeight;
+	origin = o;
+	w = unit_vector(o-lookAt);
+	u = unit_vector(cross(vup, w));
+	v = cross(w, u);
+	ulc = vec3(-halfWidth, halfHeight, -1);
+	ulc = origin - halfWidth*focus_dist*u + halfHeight*focus_dist*v - focus_dist*w;
+	horizontal = 2*halfWidth*u*focus_dist;
+	vertical = 2*halfHeight*v*focus_dist;
+}
+__device__ void camera::get_ray(const float& s, const float& t, ray& r, curandState* state){
+	vec3 rd = lens_radius * random_in_unit_disk(state);
+	vec3 offset = u*rd.x() + v*rd.y();
+	r = ray(origin + offset, ulc+s*horizontal-t*vertical-origin-offset);
 }
 
 lambertian::lambertian(const vec3& a){
 	albedo = a;
+	emitter = false;
 }
 
 __device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
@@ -283,6 +345,7 @@ __device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec,
 }
 
 metal::metal(const vec3& a, const float& f){
+	emitter = false;
 	albedo = a;
 	if(f<1)
 		fuzzy = f;
@@ -306,9 +369,13 @@ __device__ bool metal::scatter(const ray& impacting, const hit_record& rec, vec3
 
 dielectric::dielectric(const float& i){
 	ior = i;
+	emitter = false;
 }
 
 __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
+	// int index = threadIdx.x + blockDim.x*blockIdx.x;
+	// if (index == 0)
+	// 		printf("scattering %f, %f, %f\n", impacting.direction().e[0], impacting.direction().e[1], impacting.direction().e[2]);//, outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
 	vec3 outward_normal;
 	vec3 reflected = reflect(impacting.direction(), rec.normal);
 	float ni_nt;
@@ -317,8 +384,10 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	float reflect_prob;
 	float cosine;
 	float dotted = dot(impacting.direction(), rec.normal);
-	if(dotted>0){
+	if(dotted>0){//if normal and ray are facing same direction
 		outward_normal = -rec.normal;
+		// if (index == 0)
+		// 	printf("%d %f, %f, %f; %f, %f, %f\n", index, rec.normal.e[0], rec.normal.e[1], rec.normal.e[2], outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
 		ni_nt = ior;
 		cosine = dotted/impacting.direction().length();
 		cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
@@ -330,6 +399,10 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 		// cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
 	}
 	if(refract(impacting.direction(), outward_normal, ni_nt, refracted)){
+		
+		// if (index == 0)
+		// 	printf("scattering %f, %f, %f; %f, %f, %f\n", impacting.direction().e[0], impacting.direction().e[1], impacting.direction().e[2], outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
+		// printf("%d %p\n", threadIdx.x + blockDim.x*blockIdx.x, &outward_normal);
 		reflect_prob = schlick(cosine, ior);
 	}
 	else{
@@ -345,7 +418,7 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	return true;
 }
 
-__device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& refracted){
+__device__ bool refract(const vec3& v, const vec3& n, float ni_nt, vec3& refracted){
 	vec3 uv = unit_vector(v);
 	// vec3 un = unit_vector(n);
 	float dt = dot(uv, n);
@@ -353,6 +426,10 @@ __device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& 
 	float discriminant = 1.0f-ni_nt*ni_nt*(1.0f-dt*dt);
 	if(discriminant > 0){
 		refracted = ni_nt*(uv-n*dt) - n*sqrtf(discriminant);
+		// int index = threadIdx.x + blockDim.x*blockIdx.x;
+		// if (index == 0)
+		// 	printf("refracted %f, %f, %f; %f, %f, %f\n", v.e[0], v.e[1], v.e[2], refracted.e[0], refracted.e[1], refracted.e[2]);
+			// printf("%d %p\n", index, &n);
 		return true;
 	}
 	else return false;
@@ -360,6 +437,62 @@ __device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& 
 
 __device__ float dielectric::schlick(const float& cosine, const float& indor) const{
 	float r0 = (1-indor)/(1+indor);
-	r0 *= r0;
+	r0 = r0*r0;
 	return r0 + (1-r0)*pow((1-cosine), 5);
+}
+
+__device__ vec3 random_in_unit_sphere(curandState* state){
+	// curandState state;
+	// printf("Finding rand\n");
+	vec3 p;
+	do {
+		p = 2*vec3(curand_uniform(state),curand_uniform(state),curand_uniform(state)) - vec3(1,1,1);
+	} while(p.squared_length() >= 1);
+	return p;
+}
+
+// __device__ bool refract(const vec3&  v, const vec3& n, const float& ni_over_nt, vec3& refracted){
+// 	vec3 uv = unit_vector(v);
+// 	float dt = dot(uv, n);
+// 	float discriminant = 1.0-ni_over_nt*ni_over_nt*(1-dt*dt);
+// 	if(discriminant > 0){
+// 		refracted = ni_over_nt*(uv - n*dt) - n*sqrtf(discriminant);
+// 		return true;
+// 	}
+// 	else return false;
+// }
+
+// __device__ bool dielectric::scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered, curandState* state) const{
+// 	vec3 outward_normal;
+// 	vec3 reflected = reflect(r_in.direction(), rec.normal);
+// 	float ni_over_nt;
+// 	attenuation = vec3(1.0f, 1.0f, 1.0f);
+// 	vec3 refracted;
+// 	if(dot(r_in.direction(), rec.normal)>0){
+// 		outward_normal = -rec.normal;
+// 		ni_over_nt = ref_idx;
+// 	}
+// 	else{
+// 		outward_normal = rec.normal;
+// 		ni_over_nt = 1.0f/ref_idx;
+// 	}
+// 	if(refract(r_in.direction(), outward_normal, ni_over_nt, refracted)){
+// 		scattered = ray(rec.p, refracted);
+// 	}
+// 	else{
+// 		scattered = ray(rec.p, reflected);
+// 		return false;
+// 	}
+// 	return true;
+// }
+
+__device__ light::light(vec3 att){
+	attenuation = att;
+	emitter = true;
+}
+
+__device__ bool light::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
+	att = attenuation;
+	scattered = impacting;
+	return true;
 }

@@ -1,12 +1,16 @@
 #include <iostream>
 #include <curand_kernel.h>
 #include <cfloat>
+
+#define CUDA_PI 3.141592654f
+
 using namespace std;
 
 class vec3{
 public:
 	__host__ __device__ vec3();
 	__host__ __device__ vec3(float e0, float e1, float e2);
+	__host__ __device__ vec3(const vec3& v);
 	__host__ __device__ float x() const;
 	__host__ __device__ float y() const;
 	__host__ __device__ float z() const;
@@ -14,6 +18,7 @@ public:
 	__host__ __device__ float g() const;
 	__host__ __device__ float b() const;
 
+	__host__ __device__ vec3& operator=(const vec3& v);
 	__host__ __device__ const vec3& operator+() const;
 	__host__ __device__ vec3 operator-() const;
 	__host__ __device__ float operator[](int i) const;
@@ -112,17 +117,23 @@ public:
 class camera{
 public:
 	camera();
-	__host__ __device__ void get_ray(const float& u, const float& v, ray& r);
+	camera(float, float);
+	camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect);
+	camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float aperture, float focus_dist);
+	__device__ void get_ray(const float& u, const float& v, ray& r, curandState* state);
 
 	vec3 origin;
 	vec3 ulc;
 	vec3 horizontal;
 	vec3 vertical;
+	vec3 u, v, w;
+	float lens_radius;
 };
 
 class material{
 public:
 	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const = 0;
+	bool emitter;
 };
 
 class lambertian : public material{
@@ -143,7 +154,7 @@ public:
 };
 
 __device__ vec3 random_in_unit_sphere(curandState* state);
-__device__ bool refract(const vec3& v, const vec3& n, const float& ni_nt, vec3& refracted);
+__device__ bool refract(const vec3& v, const vec3& n, float ni_nt, vec3& refracted);
 
 class dielectric : public material{
 public:
@@ -151,4 +162,25 @@ public:
 	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
 	__device__ float schlick(const float& cosine, const float& indor) const;
 	float ior;
+};
+
+class volume : public hitable{
+public:
+	__device__ volume();
+	__host__ __device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
+};
+
+class light : public material{
+public:
+	__device__ light(vec3 att);
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
+	vec3 attenuation;
+};
+
+class hair : public material{
+public:
+	__device__ hair(vec3 color);
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
+	__device__ void sim();
+	__device__ void move(const vec3& position, const float& time);
 };
