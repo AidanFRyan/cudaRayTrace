@@ -26,6 +26,7 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize){
 		// list[3] = new sphere(vec3(-1, 0, -1), 0.5, new metal(vec3(0.8f, 0.8f, 0.8f), 1.0f));
 		// list[3] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
 		list[3] = new sphere(vec3(2, 1, 0), 0.5f, new light(vec3(2, 2, 2)));
+		list[4] = new sphere(vec3(-1, 1, -2), 0.5f, new light(vec3(4, 2, 2)));
 		// list[4] = new sphere(vec3(0,1,-1), 0.5f, new metal(vec3(0.8f, 0.8f, 0.9f), 0));
 		*world = new hitable_list(list, wSize);
 		// printf("wrldGen: %p %p\n", (*world)->list, (*world)->list[0]);
@@ -86,6 +87,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 
 		}
 		else{
+			return vec3(0,0,0);
 			vec3 unit_direction = unit_vector(curRay.direction());
 			float t = 0.5f*(unit_direction.y()+1.0f);
 			vec3 c = (1.0f-t)*vec3(1, 1, 1) + t*vec3(0.5f, 0.7f, 1);
@@ -150,56 +152,136 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 	}
 }
 
+__global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y){
+	int index = threadIdx.x + blockDim.x * blockIdx.x;
+	int pixelNum = index;
+	while(pixelNum < x*y){
+		for(int i = 0; i < count; i++){
+			fin[pixelNum] += img1[i][pixelNum];
+		}
+		fin[pixelNum]/=count;
+		pixelNum += gridDim.x*blockDim.x;
+	}
+}
+
 int main(){
+	curandState** state;
+	hitable *** list;
+	hitable_list ***world;// = new hitable_list(list, 2);
+	int worldSize = 5;
 	int count;
-	// cudaGetDeviceCount(&count);
+	cudaGetDeviceCount(&count);
+
+	state = new curandState*[count];
+	list = new hitable**[count];
+	world = new hitable_list**[count];
 	// cudaSetDevice(--count);
 	int x = 1920;
 	int y = 1080;
-	int aaSamples = 256;
+	int aaSamples = 1024;
 	// float** aaRands;
-	vec3 *imgBuf, *d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
-	curandState* state;
-	
+	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
+	d_img = new vec3*[count];
+	imgBuf = new vec3*[count];
 	vec3 lookFrom(-3,3,2);
 	vec3 lookAt(0,0,-1);
 	float dist = (lookFrom-lookAt).length();
 	float ap = 2.0f;
 	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 20, float(x)/float(y), ap, dist);
 	// hitable *list[2];
-	hitable ** list;
-	hitable_list **world;// = new hitable_list(list, 2);
-	int worldSize = 4;
-	cudaMalloc((void**)&state, x*y*sizeof(curandState));
-	cudaMalloc((void**)&world, sizeof(hitable_list*));
-	cudaMalloc((void**)&list, worldSize*sizeof(hitable*));
-	// cudaMalloc((void**)&aaRands, x*y*sizeof(float*));
+	for(int i = 0; i < count; i++){
+		
+		cudaSetDevice(i);
+		
+		cudaMalloc((void**)&state[i], x*y*sizeof(curandState));
+		cudaMalloc((void**)&world[i], sizeof(hitable_list*));
+		cudaMalloc((void**)&list[i], worldSize*sizeof(hitable*));
+		// cudaMalloc((void**)&aaRands, x*y*sizeof(float*));
+		// cudaDeviceSynchronize();
+		// cudaDeviceSetLimit(cudaLimitMallocHeapSize, 2*x*y*aaSamples*sizeof(float));
+	}
 	cudaDeviceSynchronize();
-	// cudaDeviceSetLimit(cudaLimitMallocHeapSize, 2*x*y*aaSamples*sizeof(float));
-	initRand<<<4,512>>>(x*y, 1, aaSamples, state);
+	for(int i = 0; i < count; i++){
+		cudaSetDevice(i);
+		initRand<<<4,512>>>(x*y, 1, aaSamples/count, state[i]);
+	}
 	cudaDeviceSynchronize();
-	// cout<<"Done initting\n";
-	worldGenerator<<<1,1>>>(list, world, worldSize);
-	// world->copyDevice();
+	for(int i = 0; i < count; i++){
+		cudaSetDevice(i);
+		
+		// cout<<"Done initting\n";
+		worldGenerator<<<1,1>>>(list[i], world[i], worldSize);
+		// world->copyDevice();
+		
+		// cudaDeviceSynchronize();
+		// printf("Done initting\n");
+		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
+		// cudaDeviceSynchronize();
+	}
+	cudaDeviceSynchronize();
+	for(int i = 0; i < count; i++){
+		cudaSetDevice(i);
+		imageGenerator<<<4, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);
+		imgBuf[i] = new vec3[x*y];	
+	}
+
+	for(int i = 0; i < count; i++){
+		cudaSetDevice(i);
+		cudaDeviceSynchronize();
+		
+		cudaMemcpy(imgBuf[i], d_img[i], sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+		cudaFree(state[i]);
+		cudaFree(world[i]);
+		cudaFree(list[i]);
+		cudaFree(d_img[i]);
+		// cudaDeviceSynchronize();
+	}
+	// for(int i = 0; i < ; i++){
+	// 	cudaSetDevice()
+	// }
+	delete[] state;
+	delete[] world;
+	delete[] list;
+	delete[] d_img;
+
+	cudaSetDevice(count-1);
+	cudaDeviceSynchronize();
 	
+	vec3** d_imgs, **imgs;
+	vec3* finImg, *img;
+
+	imgs = new vec3*[count];
+	cudaMalloc((void**)&d_imgs, count*sizeof(vec3*));
+	cudaMalloc((void**)&finImg, sizeof(vec3)*x*y);
+	img = new vec3[x*y];
+
+	for(int i = 0; i < count; i++){
+		cudaMalloc((void**)&imgs[i], x*y*sizeof(vec3));
+	}
 	cudaDeviceSynchronize();
-	// printf("Done initting\n");
-	cudaMalloc((void**)&d_img, sizeof(vec3)*x*y);
+	for(int i = 0; i < count; i++){
+		cudaMemcpy(imgs[i], imgBuf[i], sizeof(vec3)*x*y, cudaMemcpyHostToDevice);
+	}
+	cudaMemcpy(d_imgs, imgs, count*sizeof(vec3*), cudaMemcpyHostToDevice);
 	cudaDeviceSynchronize();
-	imageGenerator<<<4, 512>>>(x, y, 1, cam, aaSamples, world, d_img, state);
+
+	averageImgs<<<4, 512>>>(finImg, d_imgs, count, x, y);
 	cudaDeviceSynchronize();
-	imgBuf = new vec3[x*y];
-	cudaMemcpy(imgBuf, d_img, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(img, finImg, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
-	
+
+	cudaFree(d_imgs);
+	cudaFree(finImg);
+	delete[] imgs;
+
 	cout<<"P3\n"<<x<<' '<<y<<"\n255\n";
 	for(int i = 0; i < x*y; i++){
-		cout<<imgBuf[i].r()<<' '<<imgBuf[i].g()<<' '<<imgBuf[i].b()<<'\n';
+		cout<<img[i].r()<<' '<<img[i].g()<<' '<<img[i].b()<<'\n';
 	}
-	delete[] imgBuf;
-	cudaFree(state);
-	cudaFree(world);
-	cudaFree(list);
-	cudaFree(d_img);
+	// delete[] imgBuf;
+	delete[] img;
+	// cudaFree(d_img);
 	return 0;
 }
