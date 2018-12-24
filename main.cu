@@ -322,6 +322,7 @@ int main(){
 	frameBuffer.insert("A", Slice(FLOAT, (char*)a, sizeof(*a)*1, sizeof(*a)*x));
 	file.setFrameBuffer(frameBuffer);
 	file.writePixels(y);
+	
 	// cout<<"P3\n"<<x<<' '<<y<<"\n255\n";
 	// for(int i = 0; i < x*y; i++){
 	// 	cout<<img[i].r()<<' '<<img[i].g()<<' '<<img[i].b()<<'\n';
