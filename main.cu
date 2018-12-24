@@ -1,4 +1,11 @@
 #include "tracer.h"
+// #include <OpenEXR/ImfStandardAttributes.h>
+#include <OpenEXR/ImfNamespace.h>
+#include <OpenEXR/ImfOutputFile.h>
+#include <OpenEXR/ImfChannelList.h>
+// #include <OpenEXR/ImfExport.h>
+
+using namespace OPENEXR_IMF_NAMESPACE;
 // float hit_sphere(const vec3& center, float radius, const ray& r){
 // 	vec3 oc = r.origin() - center;
 // 	float a = dot(r.direction(), r.direction());
@@ -64,15 +71,15 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 			// 	printf("scattering %f, %f, %f\n", r.direction().e[0], r.direction().e[1], r.direction().e[2]);//, outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
 			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
 				curLight *= attenuation;
-				if(curLight.x() > 255){
-					curLight.e[0] = 255;
-				}
-				if(curLight.y() > 255){
-					curLight.e[1] = 255;
-				}
-				if(curLight.z() > 255){
-					curLight.e[2] = 255;
-				}
+				// if(curLight.x() > 255){
+				// 	curLight.e[0] = 255;
+				// }
+				// if(curLight.y() > 255){
+				// 	curLight.e[1] = 255;
+				// }
+				// if(curLight.z() > 255){
+				// 	curLight.e[2] = 255;
+				// }
 				return curLight;
 				// printf("%f %f %f\n", attenuation.r(), attenuation.g(), attenuation.b());
 				// break;
@@ -146,13 +153,14 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 				col += color(r, *world, &state[pixelNum+i]);
 			}
 			col /= aa;
-			img[pixelNum+i].set(int(255.99f*col[0]), int(255.99f*col[1]), int(255.99f*col[2]));
+			// img[pixelNum+i].set(int(255.99f*col[0]), int(255.99f*col[1]), int(255.99f*col[2]));
+			img[pixelNum+i].set(col[0], col[1], col[2]);
 		}
 		pixelNum += blockDim.x*gridDim.x;
 	}
 }
 
-__global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y){
+__global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y, float* r, float* g, float* b, float* a){
 	int index = threadIdx.x + blockDim.x * blockIdx.x;
 	int pixelNum = index;
 	while(pixelNum < x*y){
@@ -160,7 +168,12 @@ __global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y){
 			fin[pixelNum] += img1[i][pixelNum];
 		}
 		fin[pixelNum]/=count;
+		r[pixelNum] = fin[pixelNum].r();
+		g[pixelNum] = fin[pixelNum].g();
+		b[pixelNum] = fin[pixelNum].b();
+		a[pixelNum] = 1.0f;
 		pixelNum += gridDim.x*blockDim.x;
+		
 	}
 }
 
@@ -264,23 +277,60 @@ int main(){
 		cudaMemcpy(imgs[i], imgBuf[i], sizeof(vec3)*x*y, cudaMemcpyHostToDevice);
 	}
 	cudaMemcpy(d_imgs, imgs, count*sizeof(vec3*), cudaMemcpyHostToDevice);
+	
+	float *d_r, *d_g, *d_b, *d_a;
+	float *r, *g, *b, *a;
+	cudaMalloc((void**)&d_r, sizeof(float)*x*y);
+	cudaMalloc((void**)&d_g, sizeof(float)*x*y);
+	cudaMalloc((void**)&d_b, sizeof(float)*x*y);
+	cudaMalloc((void**)&d_a, sizeof(float)*x*y);
 	cudaDeviceSynchronize();
 
-	averageImgs<<<4, 512>>>(finImg, d_imgs, count, x, y);
+	averageImgs<<<4, 512>>>(finImg, d_imgs, count, x, y, d_r, d_g, d_b, d_a);
+	r = new float[x*y];
+	g = new float[x*y];
+	b = new float[x*y];
+	a = new float[x*y];
 	cudaDeviceSynchronize();
 
 	cudaMemcpy(img, finImg, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(r, d_r, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(g, d_g, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(b, d_b, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
 
+	cudaFree(d_r);
+	cudaFree(d_g);
+	cudaFree(d_b);
+	cudaFree(d_a);
 	cudaFree(d_imgs);
 	cudaFree(finImg);
 	delete[] imgs;
 
-	cout<<"P3\n"<<x<<' '<<y<<"\n255\n";
-	for(int i = 0; i < x*y; i++){
-		cout<<img[i].r()<<' '<<img[i].g()<<' '<<img[i].b()<<'\n';
-	}
+	Header header(x, y);
+	header.channels().insert("R", Channel(FLOAT));
+	header.channels().insert("G", Channel(FLOAT));
+	header.channels().insert("B", Channel(FLOAT));
+	header.channels().insert("A", Channel(FLOAT));
+
+	OutputFile file("out.exr", header);
+
+	FrameBuffer frameBuffer;
+	frameBuffer.insert("R", Slice(FLOAT, (char*)r, sizeof(*r)*1, sizeof(*r)*x));
+	frameBuffer.insert("G", Slice(FLOAT, (char*)g, sizeof(*g)*1, sizeof(*g)*x));
+	frameBuffer.insert("B", Slice(FLOAT, (char*)b, sizeof(*b)*1, sizeof(*b)*x));
+	frameBuffer.insert("A", Slice(FLOAT, (char*)a, sizeof(*a)*1, sizeof(*a)*x));
+	file.setFrameBuffer(frameBuffer);
+	file.writePixels(y);
+	// cout<<"P3\n"<<x<<' '<<y<<"\n255\n";
+	// for(int i = 0; i < x*y; i++){
+	// 	cout<<img[i].r()<<' '<<img[i].g()<<' '<<img[i].b()<<'\n';
+	// }
 	// delete[] imgBuf;
+	delete[] r;
+	delete[] g;
+	delete[] b;
+	delete[] a;
 	delete[] img;
 	// cudaFree(d_img);
 	return 0;
