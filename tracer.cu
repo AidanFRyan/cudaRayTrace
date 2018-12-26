@@ -373,9 +373,6 @@ dielectric::dielectric(const float& i){
 }
 
 __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
-	// int index = threadIdx.x + blockDim.x*blockIdx.x;
-	// if (index == 0)
-	// 		printf("scattering %f, %f, %f\n", impacting.direction().e[0], impacting.direction().e[1], impacting.direction().e[2]);//, outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
 	vec3 outward_normal;
 	vec3 reflected = reflect(impacting.direction(), rec.normal);
 	float ni_nt;
@@ -386,8 +383,6 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	float dotted = dot(impacting.direction(), rec.normal);
 	if(dotted>0){//if normal and ray are facing same direction
 		outward_normal = -rec.normal;
-		// if (index == 0)
-		// 	printf("%d %f, %f, %f; %f, %f, %f\n", index, rec.normal.e[0], rec.normal.e[1], rec.normal.e[2], outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
 		ni_nt = ior;
 		cosine = dotted/impacting.direction().length();
 		cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
@@ -396,13 +391,8 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 		outward_normal = rec.normal;
 		ni_nt = 1.0f/ior;
 		cosine = -dotted/impacting.direction().length();
-		// cosine = sqrtf(1-ior*ior*(1-cosine*cosine));
 	}
 	if(refract(impacting.direction(), outward_normal, ni_nt, refracted)){
-		
-		// if (index == 0)
-		// 	printf("scattering %f, %f, %f; %f, %f, %f\n", impacting.direction().e[0], impacting.direction().e[1], impacting.direction().e[2], outward_normal.e[0], outward_normal.e[1], outward_normal.e[2]);
-		// printf("%d %p\n", threadIdx.x + blockDim.x*blockIdx.x, &outward_normal);
 		reflect_prob = schlick(cosine, ior);
 	}
 	else{
@@ -413,23 +403,16 @@ __device__  bool dielectric::scatter(const ray& impacting, const hit_record& rec
 	}
 	else{
 		scattered = ray(rec.p, refracted);
-		// printf("refracted\n");
 	}
 	return true;
 }
 
 __device__ bool refract(const vec3& v, const vec3& n, float ni_nt, vec3& refracted){
 	vec3 uv = unit_vector(v);
-	// vec3 un = unit_vector(n);
 	float dt = dot(uv, n);
-	// pr  intf("%f\n", dt);
 	float discriminant = 1.0f-ni_nt*ni_nt*(1.0f-dt*dt);
 	if(discriminant > 0){
 		refracted = ni_nt*(uv-n*dt) - n*sqrtf(discriminant);
-		// int index = threadIdx.x + blockDim.x*blockIdx.x;
-		// if (index == 0)
-		// 	printf("refracted %f, %f, %f; %f, %f, %f\n", v.e[0], v.e[1], v.e[2], refracted.e[0], refracted.e[1], refracted.e[2]);
-			// printf("%d %p\n", index, &n);
 		return true;
 	}
 	else return false;
@@ -442,8 +425,6 @@ __device__ float dielectric::schlick(const float& cosine, const float& indor) co
 }
 
 __device__ vec3 random_in_unit_sphere(curandState* state){
-	// curandState state;
-	// printf("Finding rand\n");
 	vec3 p;
 	do {
 		p = 2*vec3(curand_uniform(state),curand_uniform(state),curand_uniform(state)) - vec3(1,1,1);

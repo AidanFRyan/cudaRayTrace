@@ -11,14 +11,13 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize){
 		// hitable* list[2];
 		list[0] = new sphere(vec3(0,0,-1), 0.5, new lambertian(vec3(0.8f, 0.3f, 0.3f)));
 		list[1] = new sphere(vec3(0,-100.5, -1), 100, new lambertian(vec3(0.8f, 0.8f, 0.0f)));
-		list[2] = new sphere(vec3(1, 0, -1), 0.5, new metal(vec3(0.8f, 0.6f, 0.2f), 0.2f));
-		// list[3] = new sphere(vec3(-1, 0, -1), 0.5, new metal(vec3(0.8f, 0.8f, 0.8f), 1.0f));
-		// list[3] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
+		list[2] = new sphere(vec3(1, 0, -1), 0.5, new metal(vec3(0.8f, 0.6f, 0.2f), 0.0f));
+		// list[3] = new sphere(vec3(-1, 0, -1), 0.5, new metal(vec3(0.8f, 0.8f, 0.8f), 1.0f))
+		list[5] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
 		list[3] = new sphere(vec3(2, 1, 0), 0.5f, new light(vec3(2, 2, 2)));
 		list[4] = new sphere(vec3(-1, 1, -2), 0.5f, new light(vec3(4, 2, 2)));
 		// list[4] = new sphere(vec3(0,1,-1), 0.5f, new metal(vec3(0.8f, 0.8f, 0.9f), 0));
 		*world = new hitable_list(list, wSize);
-		// printf("wrldGen: %p %p\n", (*world)->list, (*world)->list[0]);
 	}
 }
 
@@ -41,7 +40,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 	vec3 curLight = vec3(1,1,1);
 	for(int i = 0; i < 20; i++){
 		hit_record rec;
-		if(world->hit(curRay, 0.001, max, rec)){
+		if(world->hit(curRay, 0.00001, max, rec)){
 			ray scattered;
 			vec3 attenuation;
 			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
@@ -117,7 +116,7 @@ int main(){
 	curandState** state;
 	hitable *** list;
 	hitable_list ***world;// = new hitable_list(list, 2);
-	int worldSize = 5;
+	int worldSize = 6;
 	int count;
 	cudaGetDeviceCount(&count);
 
@@ -133,7 +132,7 @@ int main(){
 	vec3 lookFrom(-3,3,2);
 	vec3 lookAt(0,0,-1);
 	float dist = (lookFrom-lookAt).length();
-	float ap = 2.0f;
+	float ap = 0.0f;
 	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 20, float(x)/float(y), ap, dist);
 	// hitable *list[2];
 	for(int i = 0; i < count; i++){
@@ -249,6 +248,7 @@ int main(){
 	// 	cout<<img[i].r()<<' '<<img[i].g()<<' '<<img[i].b()<<'\n';
 	// }
 	// delete[] imgBuf;
+
 	delete[] r;
 	delete[] g;
 	delete[] b;
