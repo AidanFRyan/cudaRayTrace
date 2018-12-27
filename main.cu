@@ -1,22 +1,25 @@
 #include "tracer.h"
-#include <OpenEXR/ImfNamespace.h>
-#include <OpenEXR/ImfOutputFile.h>
-#include <OpenEXR/ImfChannelList.h>
+
 
 using namespace OPENEXR_IMF_NAMESPACE;
 
-__global__ void worldGenerator(hitable** list, hitable_list** world, int wSize){
+__global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, camera* cam, float x, float y){
 	int i = threadIdx.x + blockDim.x*blockIdx.x;
 	if(i==0){
+		d_vec3 lookFrom(-3,3,2);
+		d_vec3 lookAt(0,0,-1);
+		cuhalf dist = (lookFrom-lookAt).length();
+		cuhalf ap = 0.0f;
+		cam = new camera(lookFrom, lookAt, d_vec3(0, 1, 0), 20, float(x)/float(y), ap, dist);
 		// hitable* list[2];
-		list[0] = new sphere(vec3(0,0,-1), 0.5, new lambertian(vec3(0.8f, 0.3f, 0.3f)));
-		list[1] = new sphere(vec3(0,-100.5, -1), 100, new lambertian(vec3(0.8f, 0.8f, 0.0f)));
-		list[2] = new sphere(vec3(1, 0, -1), 0.5, new metal(vec3(0.8f, 0.6f, 0.2f), 0.0f));
-		// list[3] = new sphere(vec3(-1, 0, -1), 0.5, new metal(vec3(0.8f, 0.8f, 0.8f), 1.0f))
-		list[5] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
-		list[3] = new sphere(vec3(2, 1, 0), 0.5f, new light(vec3(2, 2, 2)));
-		list[4] = new sphere(vec3(-1, 1, -2), 0.5f, new light(vec3(4, 2, 2)));
-		// list[4] = new sphere(vec3(0,1,-1), 0.5f, new metal(vec3(0.8f, 0.8f, 0.9f), 0));
+		list[0] = new sphere(d_vec3(0,0,-1), 0.5, new lambertian(d_vec3(0.8f, 0.3f, 0.3f)));
+		list[1] = new sphere(d_vec3(0,-100.5, -1), 100, new lambertian(d_vec3(0.8f, 0.8f, 0.0f)));
+		list[2] = new sphere(d_vec3(1, 0, -1), 0.5, new metal(d_vec3(0.8f, 0.6f, 0.2f), 0.0f));
+		// list[3] = new sphere(d_vec3(-1, 0, -1), 0.5, new metal(d_vec3(0.8f, 0.8f, 0.8f), 1.0f))
+		list[5] = new sphere(d_vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
+		list[3] = new sphere(d_vec3(2, 1, 0), 0.5f, new light(d_vec3(2, 2, 2)));
+		list[4] = new sphere(d_vec3(-1, 1, -2), 0.5f, new light(d_vec3(4, 2, 2)));
+		// list[4] = new sphere(d_vec3(0,1,-1), 0.5f, new metal(d_vec3(0.8f, 0.8f, 0.9f), 0));
 		*world = new hitable_list(list, wSize);
 	}
 }
@@ -33,16 +36,16 @@ __global__ void initRand(int n, int cluster, int aa, curandState* state){
 	}
 }
 
-__device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
+__device__ d_vec3 color(const ray& r, hitable_list* world, curandState* state){
 	
-	float max = FLT_MAX;
+	cuhalf max = FLT_MAX;
 	ray curRay = r;
-	vec3 curLight = vec3(1,1,1);
+	d_vec3 curLight = d_vec3(1,1,1);
 	for(int i = 0; i < 20; i++){
 		hit_record rec;
 		if(world->hit(curRay, 0.00001, max, rec)){
 			ray scattered;
-			vec3 attenuation;
+			d_vec3 attenuation;
 			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
 				curLight *= attenuation;
 				return curLight;
@@ -52,22 +55,22 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
 				curRay = scattered;
 			}
 			else{
-				return vec3(0,0,0);
+				return d_vec3(0,0,0);
 			}
 
 		}
 		else{
-			return vec3(0,0,0);
-			vec3 unit_direction = unit_vector(curRay.direction());
-			float t = 0.5f*(unit_direction.y()+1.0f);
-			vec3 c = (1.0f-t)*vec3(1, 1, 1) + t*vec3(0.5f, 0.7f, 1);
+			return d_vec3(0,0,0);
+			d_vec3 unit_direction = unit_vector(curRay.direction());
+			cuhalf t = 0.5f*(unit_direction.y()+1);
+			d_vec3 c = (1.0f-t)*d_vec3(1, 1, 1) + t*d_vec3(0.5f, 0.7f, 1);
 			return curLight * c;
 		}
 	}
-	return vec3(0.0f, 0.0f, 0.0f);
+	return d_vec3(0.0f, 0.0f, 0.0f);
 }
 
-__global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hitable_list** world, vec3* img, curandState* state){
+__global__ void imageGenerator(int x, int y, int cluster, camera* cam, int aa, hitable_list** world, d_vec3* img, curandState* state){
 	
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	int pixelNum = index*cluster;
@@ -75,27 +78,29 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 	while(pixelNum < x*y){
 
 		for(int i = 0; i < cluster && (pixelNum+i) < x*y; i++){
-			float pixX = (pixelNum+i)%x, pixY = (pixelNum+i)/x;
-
+			cuhalf pixX = (pixelNum+i)%x, pixY = (pixelNum+i)/x;
+			// printf("%p %p\n", &pixX, &pixY);
 			
 			
-			vec3 col;
+			d_vec3 col;
 			for(int j = 0; j < aa; j++){
-				float u, v;
+				cuhalf u, v;
 				u = (pixX+curand_uniform(&state[pixelNum+i])) / x;
 				v = (pixY+curand_uniform(&state[pixelNum+i])) / y;
+				// printf("%f %f %f\n", pixX, pixY, curand_uniform(&state[pixelNum+i]));
 				ray r;
-				cam.get_ray(u, v, r, &state[pixelNum+i]);
+				cam->get_ray(u, v, r, &state[pixelNum+i]);
 				col += color(r, *world, &state[pixelNum+i]);
 			}
 			col /= aa;
 			img[pixelNum+i].set(col[0], col[1], col[2]);
+			// printf("%f %f %f\n", col[0], col[1], col[2]);
 		}
 		pixelNum += blockDim.x*gridDim.x;
 	}
 }
 
-__global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y, float* r, float* g, float* b, float* a){
+__global__ void averageImgs(d_vec3* fin, d_vec3** img1, int count, int x, int y, cuhalf* r, cuhalf* g, cuhalf* b, cuhalf* a){
 	int index = threadIdx.x + blockDim.x * blockIdx.x;
 	int pixelNum = index;
 	while(pixelNum < x*y){
@@ -126,19 +131,17 @@ int main(){
 	int x = 1920;
 	int y = 1080;
 	int aaSamples = 1024;
-	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
-	d_img = new vec3*[count];
-	imgBuf = new vec3*[count];
-	vec3 lookFrom(-3,3,2);
-	vec3 lookAt(0,0,-1);
-	float dist = (lookFrom-lookAt).length();
-	float ap = 0.0f;
-	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 20, float(x)/float(y), ap, dist);
+	h_vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
+	d_img = new h_vec3*[count];
+	imgBuf = new h_vec3*[count];
+	
+	// camera cam(lookFrom, lookAt, d_vec3(0, 1, 0), 20, float(x)/float(y), ap, dist);
+	camera* cam;
 	// hitable *list[2];
 	for(int i = 0; i < count; i++){
 		
 		cudaSetDevice(i);
-		
+		cudaMalloc((void**)&cam, sizeof(camera));
 		cudaMalloc((void**)&state[i], x*y*sizeof(curandState));
 		cudaMalloc((void**)&world[i], sizeof(hitable_list*));
 		cudaMalloc((void**)&list[i], worldSize*sizeof(hitable*));
@@ -152,21 +155,21 @@ int main(){
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
-		worldGenerator<<<1,1>>>(list[i], world[i], worldSize);
-		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
+		worldGenerator<<<1,1>>>(list[i], world[i], worldSize, cam, x, y);
+		cudaMalloc((void**)&d_img[i], sizeof(d_vec3)*x*y);
 	}
 	cudaDeviceSynchronize();
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
-		imageGenerator<<<4, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);
-		imgBuf[i] = new vec3[x*y];	
+		imageGenerator<<<4, 512>>>(x, y, 1, cam, aaSamples/count, world[i], (d_vec3*)d_img[i], state[i]);
+		imgBuf[i] = new h_vec3[x*y];	
 	}
 
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		cudaDeviceSynchronize();
 		
-		cudaMemcpy(imgBuf[i], d_img[i], sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
+		cudaMemcpy(imgBuf[i], d_img[i], sizeof(d_vec3)*x*y, cudaMemcpyDeviceToHost);
 		cudaDeviceSynchronize();
 		cudaFree(state[i]);
 		cudaFree(world[i]);
@@ -181,42 +184,42 @@ int main(){
 	cudaSetDevice(count-1);
 	cudaDeviceSynchronize();
 	
-	vec3** d_imgs, **imgs;
-	vec3* finImg, *img;
+	d_vec3** d_imgs, *finImg;
+	h_vec3 *img, **imgs;
 
-	imgs = new vec3*[count];
-	cudaMalloc((void**)&d_imgs, count*sizeof(vec3*));
-	cudaMalloc((void**)&finImg, sizeof(vec3)*x*y);
-	img = new vec3[x*y];
+	imgs = new h_vec3*[count];
+	cudaMalloc((void**)&d_imgs, count*sizeof(d_vec3*));
+	cudaMalloc((void**)&finImg, sizeof(d_vec3)*x*y);
+	img = new h_vec3[x*y];
 
 	for(int i = 0; i < count; i++){
-		cudaMalloc((void**)&imgs[i], x*y*sizeof(vec3));
+		cudaMalloc((void**)&imgs[i], x*y*sizeof(d_vec3));
 	}
 	cudaDeviceSynchronize();
 	for(int i = 0; i < count; i++){
-		cudaMemcpy(imgs[i], imgBuf[i], sizeof(vec3)*x*y, cudaMemcpyHostToDevice);
+		cudaMemcpy(imgs[i], imgBuf[i], sizeof(d_vec3)*x*y, cudaMemcpyHostToDevice);
 	}
-	cudaMemcpy(d_imgs, imgs, count*sizeof(vec3*), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_imgs, imgs, count*sizeof(d_vec3*), cudaMemcpyHostToDevice);
 	
-	float *d_r, *d_g, *d_b, *d_a;
-	float *r, *g, *b, *a;
-	cudaMalloc((void**)&d_r, sizeof(float)*x*y);
-	cudaMalloc((void**)&d_g, sizeof(float)*x*y);
-	cudaMalloc((void**)&d_b, sizeof(float)*x*y);
-	cudaMalloc((void**)&d_a, sizeof(float)*x*y);
+	cuhalf *d_r, *d_g, *d_b, *d_a;
+	cuhalf *r, *g, *b, *a;
+	cudaMalloc((void**)&d_r, sizeof(cuhalf)*x*y);
+	cudaMalloc((void**)&d_g, sizeof(cuhalf)*x*y);
+	cudaMalloc((void**)&d_b, sizeof(cuhalf)*x*y);
+	cudaMalloc((void**)&d_a, sizeof(cuhalf)*x*y);
 	cudaDeviceSynchronize();
 
 	averageImgs<<<4, 512>>>(finImg, d_imgs, count, x, y, d_r, d_g, d_b, d_a);
-	r = new float[x*y];
-	g = new float[x*y];
-	b = new float[x*y];
-	a = new float[x*y];
+	r = new cuhalf[x*y];
+	g = new cuhalf[x*y];
+	b = new cuhalf[x*y];
+	a = new cuhalf[x*y];
 	cudaDeviceSynchronize();
 
-	cudaMemcpy(img, finImg, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
-	cudaMemcpy(r, d_r, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
-	cudaMemcpy(g, d_g, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
-	cudaMemcpy(b, d_b, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(img, finImg, sizeof(d_vec3)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(r, d_r, sizeof(cuhalf)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(g, d_g, sizeof(cuhalf)*x*y, cudaMemcpyDeviceToHost);
+	cudaMemcpy(b, d_b, sizeof(cuhalf)*x*y, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
 
 	cudaFree(d_r);
@@ -228,18 +231,18 @@ int main(){
 	delete[] imgs;
 
 	Header header(x, y);
-	header.channels().insert("R", Channel(FLOAT));
-	header.channels().insert("G", Channel(FLOAT));
-	header.channels().insert("B", Channel(FLOAT));
-	header.channels().insert("A", Channel(FLOAT));
+	header.channels().insert("R", Channel(HALF));
+	header.channels().insert("G", Channel(HALF));
+	header.channels().insert("B", Channel(HALF));
+	header.channels().insert("A", Channel(HALF));
 
 	OutputFile file("out.exr", header);
 
 	FrameBuffer frameBuffer;
-	frameBuffer.insert("R", Slice(FLOAT, (char*)r, sizeof(*r)*1, sizeof(*r)*x));
-	frameBuffer.insert("G", Slice(FLOAT, (char*)g, sizeof(*g)*1, sizeof(*g)*x));
-	frameBuffer.insert("B", Slice(FLOAT, (char*)b, sizeof(*b)*1, sizeof(*b)*x));
-	frameBuffer.insert("A", Slice(FLOAT, (char*)a, sizeof(*a)*1, sizeof(*a)*x));
+	frameBuffer.insert("R", Slice(HALF, (char*)r, sizeof(*r)*1, sizeof(*r)*x));
+	frameBuffer.insert("G", Slice(HALF, (char*)g, sizeof(*g)*1, sizeof(*g)*x));
+	frameBuffer.insert("B", Slice(HALF, (char*)b, sizeof(*b)*1, sizeof(*b)*x));
+	frameBuffer.insert("A", Slice(HALF, (char*)a, sizeof(*a)*1, sizeof(*a)*x));
 	file.setFrameBuffer(frameBuffer);
 	file.writePixels(y);
 	
