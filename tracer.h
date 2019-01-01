@@ -1,6 +1,22 @@
+#ifndef TRACER_H
+#define TRACER_H
+
+
 #include <iostream>
 #include <curand_kernel.h>
 #include <cfloat>
+#include <fstream>
+#include <string>
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 #define CUDA_PI 3.141592654f
 
@@ -100,11 +116,13 @@ public:
 	material * mat;
 };
 
+class OBJ;
 class hitable_list{
 public:
 	__host__ __device__ hitable_list();
 	__host__ __device__ hitable_list(hitable **list, int n);
 	__host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+	__device__ hitable_list(OBJ **list, int n);
 	void copyDevice();
 
 	hitable **list, **d_list;
@@ -133,7 +151,7 @@ public:
 class material{
 public:
 	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const = 0;
-	bool emitter;
+	bool emitter, transparent;
 };
 
 class lambertian : public material{
@@ -184,3 +202,35 @@ public:
 	__device__ void sim();
 	__device__ void move(const vec3& position, const float& time);
 };
+
+class Face:public hitable{
+public:
+    __host__ __device__ Face();
+    __host__ __device__ Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3);
+    __host__ __device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const;
+    __host__ __device__ Face& operator=(const Face& in);
+    __host__ __device__ Face(const Face& in);
+	__host__ __device__ Face(const Face& in, material* m);
+// private:
+    vec3 verts[3], texts[3], normals[3], surfNorm;
+	material* mat;
+};
+
+class OBJ{
+public:
+    __host__ __device__ OBJ();
+    OBJ(string fn);
+    OBJ* copyToDevice();
+    __host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+// private:
+    ifstream file, mtllib;
+    vec3 *points, *text, *normals;
+    int numP, numT, numN, PBuf, TBuf, NBuf;
+    void parse(char* line);
+    void append(vec3*& list, int& size, int& bufSize, const vec3& item);
+    void append(const Face& item);
+    Face* object;
+    int numFaces, faceBuffer;
+};
+
+#endif

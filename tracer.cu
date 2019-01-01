@@ -147,7 +147,7 @@ float dot(const vec3 &v1, const vec3 &v2){
 	return v1.e[0]*v2.e[0] + v1.e[1]*v2.e[1] + v1.e[2]*v2.e[2];
 }
 vec3 cross(const vec3 &v1, const vec3 &v2){
-	return vec3(v1.e[1]*v2.e[2] - v1.e[2]*v2.e[1], (-(v1.e[0]*v2.e[2] - v1.e[2]*v2.e[0])), v1.e[0]*v2.e[1] - v1.e[1]*v2.e[0]);
+	return vec3(v1.y()*v2.z() - v1.z()*v2.y(), (v1.z()*v2.x() - v1.x()*v2.z()), v1.x()*v2.y() - v1.y()*v2.x());
 }
 
 vec3 unit_vector(vec3 v){
@@ -229,11 +229,14 @@ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record&
 	// printf("%p, %d\n", this, this->list_size);
 	for(int i = 0; i < list_size; i++){
 		// printf("%d %d\n", i, list_size);
+		// printf("%d %d\n", list_size, i);
 		if(list[i]->hit(r, tmin, closest, temp_rec)){
 			// printf("%f, %f, %f\n", r.direction().x(), r.direction().y(), r.direction().z());
 			anyHits = true;
 			closest = temp_rec.t;
 			rec = temp_rec;
+			// if(temp_rec.mat)
+			// break;
 		}
 	}
 	return anyHits;
@@ -476,4 +479,296 @@ __device__ bool light::scatter(const ray& impacting, const hit_record& rec, vec3
 	att = attenuation;
 	scattered = impacting;
 	return true;
+}
+
+__device__ hitable_list::hitable_list(OBJ **in, int n){
+
+	list_size = 0;
+	// printf("%d\n", n);
+	for(int i = 0; i < n; i++){
+		// printf("hl i: %d\n", i);
+		list_size += in[i]->numFaces;
+	}
+	// printf("%d\n", list_size);
+	list = new hitable*[list_size];
+	// int z = 0;
+	// for(int i = 0; i < n; i++){
+	// 	for(int j = 0; j < in[i]->numFaces; j++){
+	// 		// printf("j: %d\n", j);
+	// 		list[z] = new Face(in[i]->object[j], new light(vec3(4, 2, 2)));
+	// 		// *list[z] = in[z];
+	// 		z++;
+	// 		if(z%10000 == 0)
+	// 			printf("%d\n", z);
+	// 	}
+	// }
+}
+
+OBJ::OBJ(){
+    points = 0;
+    text = 0;
+    normals = 0;
+    numP = 0;
+    numT = 0;
+    numN = 0;
+    numFaces = 0;
+}
+
+OBJ::OBJ(string fn){
+    file = ifstream(fn);
+    numP = 0;
+    numT = 0;
+    numN = 0;
+    points = 0;
+    text = 0;
+    normals = 0;
+	numFaces = 0;
+	int i = 0;
+    while(!file.eof()){
+        char line[1000];
+        file.getline(line, 1000);
+		parse(line);
+		if(i%10000 == 0)
+			printf("%d\n", i);
+		i++;
+	}
+	file.close();
+}
+
+void OBJ::parse(char* line){
+	// printf(line);
+	// printf("\n");
+    string buf = "";
+    bool pp = false, tt = false, nn = false, newFace = false;
+    float vec[3] = {0,0,0};
+    int index = 0;
+    int set[9];
+    for(int i = 0; ; i++){
+        if(line[i] == '#')
+            break;
+        if(line[i] == ' ' || line[i] == '\t' || line[i] == '\0'){
+            if(!pp && !tt && !nn && !newFace && buf.compare("v") == 0){
+                pp = true;
+            }
+            else if(!tt && !nn && !newFace && buf.compare("vt") == 0){
+                tt = true;
+            }
+            else if(!nn && !newFace && buf.compare("vn") == 0){
+                nn = true;
+            }
+            else if(!newFace && buf.compare("f") == 0){
+                newFace = true;
+            }
+            else if((pp || tt || nn) && index < 3){
+                vec[index] = stof(buf);
+                index++;
+            }
+            else if(newFace && index < 3){
+                int count = 0;
+                string petiteBuf = "";
+                for(int j = 0; j < buf.length(); j++){
+                    if(buf[j] == '/' || buf[j] == '\0'){
+						set[index*3 + count] = stoi(petiteBuf);
+						petiteBuf = "";
+                        count++;
+                    }
+                    else{
+                        petiteBuf += buf[j];
+                    }
+                }
+                index++;
+            }
+            buf = "";
+            if(line[i] == '\0')
+                break;
+            continue;
+        }
+        buf += line[i];
+    }
+    if(pp){
+        append(points, numP, PBuf, vec3(vec[0], vec[1], vec[2]));
+        // numP++;
+    }
+    else if(tt){
+        append(text, numT, TBuf, vec3(vec[0], vec[1], 0.0f));
+        // numT++;
+    }
+    else if(nn){
+        append(normals, numN, NBuf, vec3(vec[0], vec[1], vec[2]));
+        // numN++;
+    }
+    else if(newFace){
+		// printf("%d: %f %f %f\n", numP, points[set[0]].x(), points[set[0]].x(), points[set[0]].x());
+        append(Face(points[set[0]], points[set[3]], points[set[6]], text[set[1]], text[set[4]], text[set[7]], normals[set[2]], normals[set[5]], normals[set[8]]));
+    }
+}
+
+void OBJ::append(vec3*& list, int& size, int& bufSize, const vec3& item){
+	if(size+1 > bufSize){
+		vec3* temp = new vec3[bufSize+=1000];
+		// printf("appending vectors\n");
+		for(int i = 0; i < size; i++){
+			temp[i] = list[i];
+		}		
+		if(size > 0)
+			delete[] list;
+		list = temp;
+		// bufSize += 1000;
+	}
+	list[size] = item;
+	size++;
+}
+
+void OBJ::append(const Face& item){
+	if(numFaces + 1 > faceBuffer){
+		Face* temp = new Face[faceBuffer+=1000];
+		for(int i = 0; i < numFaces; i++){
+			temp[i] = object[i];
+		}
+		// faceBuffer += 1000;
+		if(numFaces > 0)
+			delete[] object;
+		object = temp;
+	}
+	object[numFaces] = item;
+    numFaces++;
+}
+
+__host__ __device__ Face::Face(){
+    verts[0] = vec3();
+    verts[1] = vec3();
+    verts[2] = vec3();
+    texts[0] = vec3();
+    texts[1] = vec3();
+    texts[2] = vec3();
+    normals[0] = vec3();
+    normals[1] = vec3();
+	normals[2] = vec3();
+}
+
+__host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3){
+    verts[0] = v1;
+    verts[1] = v2;
+    verts[2] = v3;
+    texts[0] = t1;
+    texts[1] = t2;
+    texts[2] = t3;
+    normals[0] = n1;
+    normals[1] = n2;
+	normals[2] = n3;
+	surfNorm = unit_vector(cross(verts[1]-verts[0], verts[2]-verts[0]));
+	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
+	// printf("normals: %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z());
+}
+
+__host__ __device__ Face& Face::operator=(const Face& in){
+    verts[0] = in.verts[0];
+    verts[1] = in.verts[1];
+    verts[2] = in.verts[2];
+    texts[0] = in.texts[0];
+    texts[1] = in.texts[1];
+    texts[2] = in.texts[2];
+    normals[0] = in.normals[0];
+    normals[1] = in.normals[1];
+	normals[2] = in.normals[2];
+	
+	surfNorm = in.surfNorm;
+	// surfNorm.make_unit_vector();
+	// surfNorm = unit_vector(surfNorm);
+	// vec3 temp = unit_vector(surfNorm);
+	return *this;
+}
+
+__host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+	
+	float D = dot(surfNorm, verts[0]);
+	// printf("%f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z());
+    float temp = -(dot(surfNorm, r.A)+D)/dot(surfNorm, r.B);
+    vec3 p = r.A+temp*r.B;
+    vec3 e[3];
+    vec3 diff[3];
+    e[0] = verts[1] - verts[0];
+    e[1] = verts[2] - verts[1];
+    e[2] = verts[0] - verts[2];
+    diff[0] = p - verts[0];
+    diff[1] = p - verts[1];
+	diff[2] = p - verts[2];
+	// if(p.length() < t_max)
+		// printf("checking hit %f\n", temp);
+	// else printf("t_max: %f\n", t_max);
+    for(int i = 0; i < 3; i++){
+        if(dot(surfNorm, cross(e[i], diff[i])) <= -0.000001)
+            return false;
+    }
+    if(p.length() < t_max && dot(surfNorm, r.direction()) <= -0.00001){
+		t_max = p.length();
+		rec.mat = mat;
+		rec.t = temp;
+		rec.p = p;
+		rec.normal = surfNorm;
+		// printf("p: %f %f %f\n", p.x(), p.y(), p.z());
+        return true;
+    }
+    return false;
+}
+
+OBJ* OBJ::copyToDevice(){
+	// printf("entering ctd\n");
+	gpuErrchk(cudaDeviceSynchronize());
+	// printf("synching\n");
+	// printf("%d\n", sizeof(Face));
+	// printf("%p\n", &numFaces);
+	// printf("trying to malloc %d bytes\n", (sizeof(Face))*(numFaces));
+	Face *d_faces, *oldFaces;
+	gpuErrchk(cudaMalloc((void**)&d_faces, sizeof(Face)*this->numFaces));
+	// cout<<"mallocced faces\n";
+    gpuErrchk(cudaDeviceSynchronize());
+	gpuErrchk(cudaMemcpy(d_faces, object, sizeof(Face)*this->numFaces, cudaMemcpyHostToDevice));
+	// cout<<"copied faces\n";
+    oldFaces = object;
+    object = d_faces;
+    gpuErrchk(cudaDeviceSynchronize());
+    OBJ* d_obj;
+    gpuErrchk(cudaMalloc((void**)&d_obj, sizeof(OBJ)));
+    gpuErrchk(cudaMemcpy(d_obj, this, sizeof(OBJ), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaDeviceSynchronize());
+    object = oldFaces;
+    return d_obj;
+}
+
+__host__ __device__ bool OBJ::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+    for(int i = 0; i < numFaces; i++){
+        if(object[i].hit(r, tmin, tmax, rec))
+            return true;
+    }
+    return false;
+}
+
+__host__ __device__ Face::Face(const Face& in){
+    verts[0] = in.verts[0];
+    verts[1] = in.verts[1];
+    verts[2] = in.verts[2];
+    texts[0] = in.texts[0];
+    texts[1] = in.texts[1];
+    texts[2] = in.texts[2];
+    normals[0] = in.normals[0];
+    normals[1] = in.normals[1];
+	normals[2] = in.normals[2];
+	surfNorm = in.surfNorm;
+	mat = in.mat;
+}
+
+__host__ __device__ Face::Face(const Face& in, material* m){
+	mat = m;
+	verts[0] = in.verts[0];
+    verts[1] = in.verts[1];
+    verts[2] = in.verts[2];
+    texts[0] = in.texts[0];
+    texts[1] = in.texts[1];
+    texts[2] = in.texts[2];
+    normals[0] = in.normals[0];
+    normals[1] = in.normals[1];
+	normals[2] = in.normals[2];
+	printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
+	surfNorm = in.surfNorm;
 }
