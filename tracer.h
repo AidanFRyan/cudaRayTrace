@@ -121,8 +121,9 @@ class hitable_list{
 public:
 	__host__ __device__ hitable_list();
 	__host__ __device__ hitable_list(hitable **list, int n);
-	__host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
-	__device__ hitable_list(OBJ **list, int n);
+	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec);//, bool* d_hits, hit_record* d_recs, float* d_dmax) const;
+	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec, int index);
+	__device__ hitable_list(OBJ **list, int n, int additional);
 	void copyDevice();
 
 	hitable **list, **d_list;

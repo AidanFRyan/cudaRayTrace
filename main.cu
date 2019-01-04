@@ -34,13 +34,14 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 		// printf("Trying to create hitable_list\n");
 		// printf("numObjs: %d\n", numOBJs);
 		
-		*world = new hitable_list(objs, numOBJs);
+		*world = new hitable_list(objs, numOBJs, wSize);
+		
 	}
 	__syncthreads();
 	int curIndex = index*cluster;
 	
 	while(curIndex < (*world)->list_size){
-		for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size; i++){
+		for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size-wSize; i++){
 			// int z = 0;
 			// for(int i = 0; i < n; i++){
 			// 	for(int j = 0; j < in[i]->numFaces; j++){
@@ -59,12 +60,16 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 					for(int z = 0; z < j; z++){
 						offset += objs[j]->numFaces;
 					}
-					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new light(vec3(4, 2, 2)));
+					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new metal(vec3(0.5f, 0.5f, 0.5f), 0));
 					// printf("%d %p\n", curIndex+i, (*world)->list[curIndex+i]);
-				}				
+				}
 			}
 		}
 		curIndex += gridDim.x*blockDim.x;
+	}
+	__syncthreads();
+	if(index==0){
+		(*world)->list[(*world)->list_size-1] = new sphere(vec3(20, 0, 0), 5.0f, new light(vec3(200, 200, 200)));
 	}
 }
 
@@ -80,47 +85,52 @@ __global__ void initRand(int n, int cluster, int aa, curandState* state){
 	}
 }
 
-__device__ vec3 color(const ray& r, hitable_list* world, curandState* state){
+__device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
 	
 	float max = FLT_MAX;
 	ray curRay = r;
 	vec3 curLight = vec3(1,1,1);
 	for(int i = 0; i < 10; i++){
 		hit_record rec;
-		if(world->hit(curRay, 0.00001f, max, rec)){
+		// const ray& r, const float& tmin, float& tmax, hit_record& rec, bool* d_hits, hit_record* d_recs, float* d_dmax
+		if(world->hit(curRay, 0.00001f, max, rec)){//}, d_hits, d_recs, d_dmax)){
 			ray scattered;
 			vec3 attenuation;
 			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
+				// printf("hit a big ol' light\n");
 				curLight *= attenuation;
 				return curLight;
 			}
 			else if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
+				// printf("scattered\n");
 				curLight *= attenuation;
 				curRay = scattered;
 			}
 			else{
+				// printf("hit but not scattered\n");
 				return vec3(0,0,0);
 			}
 
 		}
 		else{
-			return vec3(0,0,0);
+			// return vec3(0,0,0);
+			// printf("to infinity!\n");
 			vec3 unit_direction = unit_vector(curRay.direction());
 			float t = 0.5f*(unit_direction.y()+1.0f);
-			vec3 c = (1.0f-t)*vec3(1, 1, 1) + t*vec3(0.5f, 0.7f, 1);
+			vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
 			return curLight * c;
 		}
 	}
+	// printf("exceeded bounce count\n");
 	return vec3(0.0f, 0.0f, 0.0f);
 }
 
-__global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hitable_list** world, vec3* img, curandState* state){
+__global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hitable_list** world, vec3* img, curandState* state){//}, bool** d_hits, hit_record** d_recs, float ** d_dmax){
 	
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	int pixelNum = index*cluster;
 	
 	while(pixelNum < x*y){
-
 		for(int i = 0; i < cluster && (pixelNum+i) < x*y; i++){
 			float pixX = (pixelNum+i)%x, pixY = (pixelNum+i)/x;
 
@@ -133,13 +143,13 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 				v = (pixY+curand_uniform(&state[pixelNum+i])) / y;
 				ray r;
 				cam.get_ray(u, v, r, &state[pixelNum+i]);
-				col += color(r, *world, &state[pixelNum+i]);
+				col += color(r, *world, &state[pixelNum+i]);//, d_hits[index], d_recs[index], d_dmax[index]);
 			}
 			col /= aa;
 			img[pixelNum+i].set(col[0], col[1], col[2]);
 		}
-		// if(index == 0)
-		// 	printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
+		if(index == 0)
+			printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
 		pixelNum += blockDim.x*gridDim.x;
 	}
 }
@@ -176,21 +186,20 @@ __global__ void clearWorld(hitable_list ** world, int cluster){
 }
 
 int main(int argc, char* argv[]){
+	int pixelCluster = 64;
+
 	// printf("%d\n", sizeof(Face));
 
 	// printf("%d\n", argc);
 	size_t totalSize = 0, *curSize = new size_t;
 	int numOBJs = argc-1;
 	OBJ ***d_objs, **objs = new OBJ*[numOBJs], ***h_d_objs;// = new OBJ*[numOBJs];
-	for(int i = 0; i < numOBJs; i++){
-		objs[i] = new OBJ(argv[i+1]);
-		totalSize += objs[i]->numFaces*sizeof(Face) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3);
-	}
+	
 	printf("Read .objs\n");
 	curandState** state;
 	hitable *** list;
 	hitable_list ***world;// = new hitable_list(list, 2);
-	int worldSize = 6;
+	int worldSize = 1;
 	int count, firstDevice = 0;
 	gpuErrchk(cudaGetDeviceCount(&count));
 	// printf("numDevices: %d\n", count);
@@ -198,23 +207,30 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int x = 720;
-	int y = 480;
-	int aaSamples = 2;
+	int x = 1920;
+	int y = 1080;
+	int aaSamples = 8;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
 	imgBuf = new vec3*[count];
 	d_objs = new OBJ**[count];
 	h_d_objs = new OBJ**[count];
-	vec3 lookFrom(-10, -10, 10);
+	vec3 lookFrom(4, 1, 0);
 	vec3 lookAt(0,0,0);
 	float dist = (lookFrom-lookAt).length();
 	float ap = 0.0f;
-	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 40, float(x)/float(y), ap, dist);
+	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 60, float(x)/float(y), ap, dist);
 	// hitable *list[2];
-	printf("Beginning World Allocation, allocating %d bytes\n", totalSize);
-	totalSize*=4;
+	int numObjs = worldSize;
+	for(int i = 0; i < numOBJs; i++){
+		objs[i] = new OBJ(argv[i+1]);
+		totalSize += objs[i]->numFaces*sizeof(Face) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
+		numObjs += objs[i]->numFaces;
+	}
+	// numObjs+=worldSize;
+	totalSize*=2;
+	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
 	for(int i = firstDevice; i < count; i++){
 		// printf("%d\n", i);
 		
@@ -228,7 +244,7 @@ int main(int argc, char* argv[]){
 		h_d_objs[i] = new OBJ*[numOBJs];
 	}
 	cudaDeviceSynchronize();
-	printf("Beginning Rand Generation, %d bytes allocated\n", totalSize);
+	printf("Beginning Rand Generation, %u bytes allocated\n", totalSize);
 	for(int i = firstDevice; i < count; i++){
 		// printf("%d\n", i);
 		gpuErrchk(cudaSetDevice(i));
@@ -245,20 +261,49 @@ int main(int argc, char* argv[]){
 		gpuErrchk(cudaMalloc((void**)&d_objs[i], sizeof(OBJ*)*numOBJs));
 		gpuErrchk(cudaMemcpy(d_objs[i], h_d_objs[i], sizeof(OBJ*)*numOBJs, cudaMemcpyHostToDevice));
 		gpuErrchk(cudaDeviceSynchronize());
-	}
-	cudaDeviceSynchronize();
+	}	
 	printf("worldGenerator Beginning\n");
 	for(int i = firstDevice; i < count; i++){
 		cudaSetDevice(i);
 		
-		worldGenerator<<<1,1024>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
+		worldGenerator<<<1,512>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
+	printf("Allocating Space for Hit Search\n");
 	cudaDeviceSynchronize();
+	// bool*** h_hits, ***d_hits;
+	// hit_record*** h_recs, ***d_recs;
+	// float*** h_dmax, ***d_dmax;
+	// h_hits = new bool**[count];
+	// h_recs = new hit_record**[count];
+	// h_dmax = new float**[count];
+	// d_hits = new bool**[count];
+	// d_recs = new hit_record**[count];
+	// d_dmax = new float**[count];
+	// for(int j = firstDevice; j < count; j++){
+	// 	cudaSetDevice(j);
+	// 	h_hits[j] = new bool*[x*y];
+	// 	h_recs[j] = new hit_record*[x*y];
+	// 	h_dmax[j] = new float*[x*y];
+	// 	gpuErrchk(cudaMalloc((void**)&d_hits[j], sizeof(bool*)*512));
+	// 	gpuErrchk(cudaMalloc((void**)&d_recs[j], sizeof(hit_record*)*512));
+	// 	gpuErrchk(cudaMalloc((void**)&d_dmax[j], sizeof(float*)*512));
+	// 	cudaDeviceSynchronize();
+	// 	for(int i = 0; i < 512; i++){
+	// 		gpuErrchk(cudaMalloc((void**)&h_hits[j][i], sizeof(bool)*numObjs));
+	// 		gpuErrchk(cudaMalloc((void**)&h_recs[j][i], sizeof(hit_record)*numObjs));
+	// 		gpuErrchk(cudaMalloc((void**)&h_dmax[j][i], sizeof(float)*numObjs));
+	// 		cudaDeviceSynchronize();
+	// 	}
+	// 	gpuErrchk(cudaMemcpy(d_hits[j], h_hits[j], sizeof(bool*)*512, cudaMemcpyHostToDevice));
+	// 	gpuErrchk(cudaMemcpy(d_recs[j], h_recs[j], sizeof(hit_record*)*512, cudaMemcpyHostToDevice));
+	// 	gpuErrchk(cudaMemcpy(d_dmax[j], h_dmax[j], sizeof(float*)*512, cudaMemcpyHostToDevice));
+	// }
+	// cudaDeviceSynchronize();
 	printf("Beginning Render\n");
 	for(int i = firstDevice; i < count; i++){
 		cudaSetDevice(i);
-		imageGenerator<<<4, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);
+		imageGenerator<<<1, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);//, d_hits[i], d_recs[i], d_dmax[i]);
 		imgBuf[i] = new vec3[x*y];	
 	}
 	cudaDeviceSynchronize();

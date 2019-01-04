@@ -219,14 +219,57 @@ hitable_list::hitable_list(hitable **list, int n){
 	this->list = list;
 	list_size = n;
 }
+
+__global__ void listHits(int n, int cluster, bool* anyHits, const ray* r, hitable** list, hit_record* temp_rec, float* dist, float tmin, float tmax, bool* finished){
+	int index = threadIdx.x + blockDim.x*blockIdx.x;
+	int curIndex = index * cluster;
+	while(curIndex < n){
+		for(int i = 0; i < cluster && curIndex+i < n; i++){
+			if(list[curIndex+i]->hit(*r, tmin, tmax, temp_rec[curIndex+i])){
+				anyHits[curIndex+i] = true;
+				dist[curIndex+i] = temp_rec[curIndex+i].t;
+			}
+			else{
+				anyHits[curIndex+i] = false;
+			}
+		}
+		curIndex += gridDim.x*blockDim.x;
+	}
+	__syncthreads();
+	if(index == 0){
+		float max = tmax;
+		for(int i = 0; i < n; i++){
+			if(anyHits[i]){
+				if(dist[i] < max){
+					max = dist[i];
+					anyHits[0] = true;
+					dist[0] = max;
+					temp_rec[0] = temp_rec[i];
+				}
+			}
+		}
+		*finished = true;
+	}
+}
 // hitable** hitable_list::listPointer(){
 // 	return d_list;
 // }
-bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+__device__ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec){//}, bool* d_hits, hit_record* d_recs, float* d_dmax) const{
 	hit_record temp_rec;
 	bool anyHits = false;
+	// bool* finished = new bool;
+	// *finished = false;
 	float closest = tmax;
+	// bool* d_hits = new bool[list_size];
+	// hit_record* d_recs = new hit_record[list_size];
+	// float* d_dmax = new float[list_size];
 	// printf("%p, %d\n", this, this->list_size);
+	// listHits<<<1, 256>>>(list_size, 1, d_hits, &r, list, d_recs, d_dmax, tmin, tmax, finished);
+	// cudaDeviceSynchronize();
+	// while(!finished);
+	// rec = d_recs[0];
+	// anyHits = d_hits[0];
+
 	for(int i = 0; i < list_size; i++){
 		// printf("%d %d\n", i, list_size);
 		// printf("%d %d\n", list_size, i);
@@ -239,7 +282,26 @@ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record&
 			// break;
 		}
 	}
+	// delete[] d_hits;
+	// delete[] d_recs;
+	// delete[] d_dmax;
 	return anyHits;
+}
+
+__device__ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec, int index){
+	if(index<list_size){
+		hit_record temp_rec;
+		// bool anyHits = false;
+		// bool* finished = new bool;
+		// *finished = false;
+		float closest = tmax;
+		if(list[index]->hit(r, tmin, closest, temp_rec)){
+			closest = temp_rec.t;
+			rec = temp_rec;
+			return true;
+		}
+	}
+	return false;
 }
 
 //apparently overrides of a parent's virtual functions don't work when the objects are instantiated on the host, instead must be instantiated through a backassward array of pointers and created entirely dynamically on the device
@@ -324,15 +386,81 @@ camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float ap
 	w = unit_vector(o-lookAt);
 	u = unit_vector(cross(vup, w));
 	v = cross(w, u);
-	ulc = vec3(-halfWidth, halfHeight, -1);
+	// ulc = vec3(-halfWidth, halfHeight, -1);
 	ulc = origin - halfWidth*focus_dist*u + halfHeight*focus_dist*v - focus_dist*w;
 	horizontal = 2*halfWidth*u*focus_dist;
 	vertical = 2*halfHeight*v*focus_dist;
 }
 __device__ void camera::get_ray(const float& s, const float& t, ray& r, curandState* state){
 	vec3 rd = lens_radius * random_in_unit_disk(state);
+	// printf("%f\n", v.y());
 	vec3 offset = u*rd.x() + v*rd.y();
 	r = ray(origin + offset, ulc+s*horizontal-t*vertical-origin-offset);
+}
+
+__host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3){
+    verts[0] = v1;
+    verts[1] = v2;
+    verts[2] = v3;
+    texts[0] = t1;
+    texts[1] = t2;
+    texts[2] = t3;
+    normals[0] = n1;
+    normals[1] = n2;
+	normals[2] = n3;
+	surfNorm = unit_vector(cross(verts[1]-verts[0], verts[2]-verts[1]));
+	// vec3 avgNorms = unit_vector((n1 + n2 + n3)/3);
+	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
+	// if(avgNorms.x() != surfNorm.x() || avgNorms.y() != surfNorm.y() || avgNorms.z() != surfNorm.z())
+	// printf("normals: %f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), avgNorms.x(), avgNorms.y(), avgNorms.z());
+}
+
+__host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+	if(abs(dot(surfNorm, r.direction())) < .001){
+		// printf("parallel\n");
+		return false;
+	}
+	float D = dot(surfNorm, verts[0]);
+	
+	float temp = -((dot(surfNorm, r.origin())-D)/dot(surfNorm, r.direction()));
+	// printf("%f\n", temp);
+    vec3 p = (r.origin())+temp*(r.direction());
+    vec3 e[3];
+    vec3 diff[3];
+    e[0] = verts[1] - verts[0];
+    e[1] = verts[2] - verts[1];
+    e[2] = verts[0] - verts[2];
+    diff[0] = p - verts[0];
+    diff[1] = p - verts[1];
+	diff[2] = p - verts[2];
+	// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
+	// if(p.length() < t_max)
+		// printf("checking hit %f\n", temp);
+	// else printf("t_max: %f\n", t_max);
+	// printf("verts:\n%f %f %f\n%f %f %f\n%f %f %f\np:\n%f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z());
+
+	for(int i = 0; i < 3; i++){
+		// printf("%f\n",dot(surfNorm, cross(e[i], diff[i])));
+        if(dot(surfNorm, cross(e[i], diff[i])) < 0){
+			return false;
+		}
+	}
+	// printf("ray is inside a triangle!\n");
+	// printf("D: %f\nverts:\n%f %f %f\n%f %f %f\n%f %f %f\np: %f %f %f\nr.origin: %f %f %f\nr.direction: %f %f %f\n", D, verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z(), r.origin().x(), r.origin().y(), r.origin().z(), r.direction().x(), r.direction().y(), r.direction().z());
+
+    if(temp < t_max && temp > t_min){
+		t_max = temp;
+		rec.mat = mat;
+		rec.t = temp;
+		rec.p = p;
+		rec.normal = surfNorm;
+		// printf("%f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), p.x(), p.y(), p.z());
+		// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
+		// printf("r.B: %f %f %f\n", r.B.x(), r.B.y(), r.B.z());
+		// printf("p: %f %f %f\nv1: %f %f %f\nv2: %f %f %f\nv3: %f %f %f\n", p.x(), p.y(), p.z(), verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
+        return true;
+    }
+    return false;
 }
 
 lambertian::lambertian(const vec3& a){
@@ -481,7 +609,7 @@ __device__ bool light::scatter(const ray& impacting, const hit_record& rec, vec3
 	return true;
 }
 
-__device__ hitable_list::hitable_list(OBJ **in, int n){
+__device__ hitable_list::hitable_list(OBJ **in, int n, int additional){
 
 	list_size = 0;
 	// printf("%d\n", n);
@@ -490,7 +618,7 @@ __device__ hitable_list::hitable_list(OBJ **in, int n){
 		list_size += in[i]->numFaces;
 	}
 	// printf("%d\n", list_size);
-	list = new hitable*[list_size];
+	list = new hitable*[list_size+additional];
 	// int z = 0;
 	// for(int i = 0; i < n; i++){
 	// 	for(int j = 0; j < in[i]->numFaces; j++){
@@ -524,7 +652,7 @@ OBJ::OBJ(string fn){
     normals = 0;
 	numFaces = 0;
 	int i = 0;
-    while(!file.eof()){
+    while(!file.eof() && !file.fail()){
         char line[1000];
         file.getline(line, 1000);
 		parse(line);
@@ -566,9 +694,10 @@ void OBJ::parse(char* line){
             else if(newFace && index < 3){
                 int count = 0;
                 string petiteBuf = "";
-                for(int j = 0; j < buf.length(); j++){
+                for(int j = 0; j < buf.length()+1; j++){
                     if(buf[j] == '/' || buf[j] == '\0'){
-						set[index*3 + count] = stoi(petiteBuf);
+						set[index*3 + count] = stoi(petiteBuf)-1;
+						// printf("%d\n", set[index*3+count]);
 						petiteBuf = "";
                         count++;
                     }
@@ -598,9 +727,10 @@ void OBJ::parse(char* line){
         // numN++;
     }
     else if(newFace){
-		// printf("%d: %f %f %f\n", numP, points[set[0]].x(), points[set[0]].x(), points[set[0]].x());
+		// printf("%d: %f %f %f\n", set[0], points[set[0]].x(), points[set[0]].y(), points[set[0]].z());
         append(Face(points[set[0]], points[set[3]], points[set[6]], text[set[1]], text[set[4]], text[set[7]], normals[set[2]], normals[set[5]], normals[set[8]]));
-    }
+		// exit(0);
+	}
 }
 
 void OBJ::append(vec3*& list, int& size, int& bufSize, const vec3& item){
@@ -646,20 +776,7 @@ __host__ __device__ Face::Face(){
 	normals[2] = vec3();
 }
 
-__host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3){
-    verts[0] = v1;
-    verts[1] = v2;
-    verts[2] = v3;
-    texts[0] = t1;
-    texts[1] = t2;
-    texts[2] = t3;
-    normals[0] = n1;
-    normals[1] = n2;
-	normals[2] = n3;
-	surfNorm = unit_vector(cross(verts[1]-verts[0], verts[2]-verts[0]));
-	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
-	// printf("normals: %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z());
-}
+
 
 __host__ __device__ Face& Face::operator=(const Face& in){
     verts[0] = in.verts[0];
@@ -677,39 +794,6 @@ __host__ __device__ Face& Face::operator=(const Face& in){
 	// surfNorm = unit_vector(surfNorm);
 	// vec3 temp = unit_vector(surfNorm);
 	return *this;
-}
-
-__host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
-	
-	float D = dot(surfNorm, verts[0]);
-	// printf("%f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z());
-    float temp = -(dot(surfNorm, r.A)+D)/dot(surfNorm, r.B);
-    vec3 p = r.A+temp*r.B;
-    vec3 e[3];
-    vec3 diff[3];
-    e[0] = verts[1] - verts[0];
-    e[1] = verts[2] - verts[1];
-    e[2] = verts[0] - verts[2];
-    diff[0] = p - verts[0];
-    diff[1] = p - verts[1];
-	diff[2] = p - verts[2];
-	// if(p.length() < t_max)
-		// printf("checking hit %f\n", temp);
-	// else printf("t_max: %f\n", t_max);
-    for(int i = 0; i < 3; i++){
-        if(dot(surfNorm, cross(e[i], diff[i])) <= -0.000001)
-            return false;
-    }
-    if(p.length() < t_max && dot(surfNorm, r.direction()) <= -0.00001){
-		t_max = p.length();
-		rec.mat = mat;
-		rec.t = temp;
-		rec.p = p;
-		rec.normal = surfNorm;
-		// printf("p: %f %f %f\n", p.x(), p.y(), p.z());
-        return true;
-    }
-    return false;
 }
 
 OBJ* OBJ::copyToDevice(){
@@ -769,6 +853,6 @@ __host__ __device__ Face::Face(const Face& in, material* m){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
-	printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
+	// printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
 	surfNorm = in.surfNorm;
 }
