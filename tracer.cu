@@ -438,6 +438,9 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
     normals[1] = n2;
 	normals[2] = n3;
 	surfNorm = unit_vector(cross(verts[1]-verts[0], verts[2]-verts[1]));
+	e[0] = verts[1] - verts[0];
+    e[1] = verts[2] - verts[1];
+    e[2] = verts[0] - verts[2];
 	// vec3 avgNorms = unit_vector((n1 + n2 + n3)/3);
 	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
 	// if(avgNorms.x() != surfNorm.x() || avgNorms.y() != surfNorm.y() || avgNorms.z() != surfNorm.z())
@@ -445,20 +448,19 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 }
 
 __host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
-	if(abs(dot(surfNorm, r.direction())) < .001){
+	float NdotDir = dot(surfNorm, r.direction());
+	if(abs(NdotDir) < .001){
 		// printf("parallel\n");
 		return false;
 	}
 	float D = dot(surfNorm, verts[0]);
 	
-	float temp = -((dot(surfNorm, r.origin())-D)/dot(surfNorm, r.direction()));
+	float temp = -((dot(surfNorm, r.origin())-D)/NdotDir);
 	// printf("%f\n", temp);
     vec3 p = (r.origin())+temp*(r.direction());
-    vec3 e[3];
+    // vec3 e[3];
     vec3 diff[3];
-    e[0] = verts[1] - verts[0];
-    e[1] = verts[2] - verts[1];
-    e[2] = verts[0] - verts[2];
+    
     diff[0] = p - verts[0];
     diff[1] = p - verts[1];
 	diff[2] = p - verts[2];
@@ -803,6 +805,9 @@ __host__ __device__ Face::Face(){
     normals[0] = vec3();
     normals[1] = vec3();
 	normals[2] = vec3();
+	e[0] = vec3();
+	e[1] = vec3();
+	e[2] = vec3();
 }
 
 
@@ -817,7 +822,9 @@ __host__ __device__ Face& Face::operator=(const Face& in){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
-	
+	e[0] = in.e[0];
+	e[1] = in.e[1];
+	e[2] = in.e[2];
 	surfNorm = in.surfNorm;
 	// surfNorm.make_unit_vector();
 	// surfNorm = unit_vector(surfNorm);
@@ -867,6 +874,9 @@ __host__ __device__ Face::Face(const Face& in){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
+	e[0] = in.e[0];
+	e[1] = in.e[1];
+	e[2] = in.e[2];
 	surfNorm = in.surfNorm;
 	mat = in.mat;
 }
@@ -882,6 +892,9 @@ __host__ __device__ Face::Face(const Face& in, material* m){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
+	e[0] = in.e[0];
+	e[1] = in.e[1];
+	e[2] = in.e[2];
 	// printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
 	surfNorm = in.surfNorm;
 }

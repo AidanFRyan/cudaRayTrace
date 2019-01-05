@@ -4,11 +4,11 @@
 #include <OpenEXR/ImfNamespace.h>
 #include <OpenEXR/ImfOutputFile.h>
 #include <OpenEXR/ImfChannelList.h>
-
+#include <cooperative_groups.h>
 
 
 using namespace OPENEXR_IMF_NAMESPACE;
-
+using namespace cooperative_groups;
 __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, OBJ** objs, int numOBJs, int cluster){
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	if(index==0){
@@ -98,7 +98,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}
 			ray scattered;
 			vec3 attenuation;
 			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
-				printf("hit a big ol' light\n");
+				// printf("hit a big ol' light\n");
 				curLight *= attenuation;
 				return curLight;
 			}
@@ -201,13 +201,17 @@ __global__ void clearWorld(hitable_list ** world, int cluster){
 }
 //  bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
 __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
+	grid_group g = this_grid();
 	int index = threadIdx.x+blockDim.x*blockIdx.x;
 	// hit_record* hitRec = new hit_record[world->list_size];
 	// bool* hits = new bool[world->list_size];
 	
 	// ray curRay(A, B);
 	
-	for(int i = 0; i < 32; i++){
+	vec3 curLight = vec3(1,1,1);
+	for(int i = 0; i < 10; i++){
+		// if(index==1)
+		// printf("%f %f %f\n", curRay->B.x(), curRay->B.y(), curRay->B.z());
 		
 		float max = FLT_MAX;
 		// const ray& r, const float& tmin, float& tmax, hit_record& rec, bool* d_hits, hit_record* d_recs, float* d_dmax
@@ -222,38 +226,91 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 			}
 			// printf("%d\n", j);
 		}
-		__syncthreads();
-		if(index == 0){
-			bool anyHit = false;
-			hit_record rec;
+		// __syncthreads();
+		g.sync();
+		for(int j = index; j < (*world)->list_size; j+=gridDim.x*blockDim.x){
+			// bool anyHit = false;
+			// hit_record rec;
 			vec3 curLight = vec3(1,1,1);
-			for(int j = 0; j < (*world)->list_size; j++){
+			// for(int j = 0; j < (*world)->list_size; j++){
 				if(hits[j]){
 					if(hitRec[j].t < max){
 						max = hitRec[j].t;
-						anyHit = true;
-						rec = hitRec[j];
+						hits[index] = true;
+						hitRec[index] = hitRec[i];
 					}
 				}
+			// }
+		}
+		// __syncthreads();
+		g.sync();
+		int powa = 0;
+		for(int z = 1; int(powf(2, z))<=gridDim.x*blockDim.x; z++){
+			// g.sync();
+			powa = gridDim.x*blockDim.x/int(powf(2,z));
+			if(hits[index])
+				max = hitRec[index].t;
+			else
+				max = FLT_MAX;
+			// printf("pow: %d\n", int(powf(2, z)));
+			// if(index==1){
+			// 	printf("%d %d\n", index, int(powf(2, z)));
+			// }
+			for(int j = index+powa; j < powa*2 && j < (*world)->list_size; j+=powa){
+				// if(index == 1)
+				// 	printf("%d\n", index);
+				if(hits[j]){
+					if(hitRec[j].t < max){
+						max = hitRec[j].t;
+						hits[index] = true;
+						hitRec[index] = hitRec[j];
+						// if(index == 0)
+						// printf("%d Hit Detected at %d, moving to %d\n", z, j, index);
+						
+					}
+				}
+				// if(index == 2){
+				// 	printf("%d %d %d\n", z, index, j);
+				// }
+				// if(index == 1){
+				// 	printf("%d %d %d %d\n", z, index, j, gridDim.x*blockDim.x/int(powf(2, z-1)));
+				// }
+				// if(index == 0)
+				// 	printf("%d %d %d %d %d\n", z, index, j, hits[index], hits[j]);
+
+					
 			}
-		
-			if(anyHit){//}, d_hits, d_recs, d_dmax)){
+			// __syncthreads();
+			g.sync();
+		}
+		// __syncthreads();
+		g.sync();
+		if(index == 0){
+			hit_record rec = hitRec[0];
+			
+			if(hits[0]){//}, d_hits, d_recs, d_dmax)){
+				// printf("hit %p\n", rec.mat);
 				ray scattered;
 				vec3 attenuation;
-				if(rec.mat->emitter && rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
-					// printf("hit a big ol' light\n");
-					curLight *= attenuation;
-					*color = curLight;
-					return;
-				}
-				else if(rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
+				// if(rec.mat->emitter && rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
+				// 	// printf("hit a big ol' light\n");
+				// 	curLight *= attenuation;
+				// 	*color = curLight;
+				// 	return;
+				// }
+				if(rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
 					// printf("scattered\n");
 					curLight *= attenuation;
+					// printf("scattered %d: %f %f %f\n", i, attenuation.x(), attenuation.y(), attenuation.z());
 					*curRay = scattered;
+					// printf("%f %f %f\n", curRay->B.x(), curRay->B.y(), curRay->B.z());
+					if(rec.mat->emitter)
+						return;
 				}
 				else{
 					// printf("hit but not scattered\n");
 					*color = vec3(0,0,0);
+					return;
 				}
 
 			}
@@ -264,13 +321,18 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 				float t = 0.5f*(unit_direction.y()+1.0f);
 				vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
 				*color = curLight * c;
+				return;
 			}
 		}
-		__syncthreads();
+		g.sync();
+		// __syncthreads();
+		// if(index == 123)
+		// printf("%d: %f %f %f\n", i, curRay->B.x(), curRay->B.y(), curRay->B.z());
 	}
 
 	// if (index==0){
-	// 	printf("exceeded bounce count\n");
+	// 	printf("color: %f %f %f\n", color->x(), color->y(), color->z());
+	// }
 	// 	*color = vec3(0.0f, 0.0f, 0.0f);
 	// }
 }
@@ -297,8 +359,8 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int x = 1920;
-	int y = 1080;
+	int x = 100;
+	int y = 50;
 	int aaSamples = 32;
 
 	vec3 *imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
@@ -306,7 +368,7 @@ int main(int argc, char* argv[]){
 	// imgBuf = new vec3*[count];
 	d_objs = new OBJ**[count];
 	h_d_objs = new OBJ**[count];
-	vec3 lookFrom(4, 1, 0);
+	vec3 lookFrom(5, 0, 0);
 	vec3 lookAt(0,0,0);
 	float dist = (lookFrom-lookAt).length();
 	float ap = 0.0f;
@@ -356,7 +418,7 @@ int main(int argc, char* argv[]){
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
-		worldGenerator<<<1,512>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
+		worldGenerator<<<1,1024>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
 	// printf("Allocating Space for Hit Search\n");
@@ -430,7 +492,7 @@ int main(int argc, char* argv[]){
 		for(int z = 0; z < aaSamples; z++){
 			for(int i = 0; i < count; i++){
 				cudaSetDevice(i);
-				getColor<<<1, 1024>>>(d_ray[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
+				getColor<<<16, 1024>>>(d_ray[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
 				// cudaMemcpy(color, d_color, sizeof(vec3), cudaMemcpyDeviceToHost);
 				// col += *color;
 				// printf("%d %d\n", i, z);
@@ -444,11 +506,11 @@ int main(int argc, char* argv[]){
 			cudaSetDevice(i);
 			for(int z = 0; z < aaSamples; z++){
 				// printf("%d %d\n", i, z);
-				vec3* temp = new vec3();
+				// vec3* temp = new vec3();
 				// printf("%p\n", d_color[i][z]);
-				gpuErrchk(cudaMemcpy(temp, d_color[i][z], sizeof(vec3), cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(color[i][z], d_color[i][z], sizeof(vec3), cudaMemcpyDeviceToHost));
 				cudaDeviceSynchronize();
-				color[i][z] = temp;
+				// color[i][z] = temp;
 			}
 			
 		}
@@ -459,6 +521,7 @@ int main(int argc, char* argv[]){
 			
 			col[i] /= aaSamples;
 			imgBuf[j+i].set(col[i].x(), col[i].y(), col[i].z());
+			// printf("%f %f %f\n", imgBuf[j+i].r(), imgBuf[j+i].g(), imgBuf[j+i].b());
 		}
 		
 		

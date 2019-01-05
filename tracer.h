@@ -215,7 +215,7 @@ public:
     __host__ __device__ Face(const Face& in);
 	__host__ __device__ Face(const Face& in, material* m);
 // private:
-    vec3 verts[3], texts[3], normals[3], surfNorm;
+    vec3 verts[3], texts[3], normals[3], surfNorm, e[3];
 	material* mat;
 };
 

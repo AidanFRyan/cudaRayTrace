@@ -1,7 +1,7 @@
 main: main.o tracer.o
 	nvcc -lIlmImf -arch=sm_61 main.o tracer.o -o main
 main.o: main.cu tracer.h
-	nvcc -dc -arch=sm_61 -c main.cu
+	nvcc -rdc=true -dc -arch=sm_61 -c main.cu
 tracer.o: tracer.cu tracer.h
 	nvcc -dc -arch=sm_61 -c tracer.cu
 # objRead.o: objRead.cpp objRead.h
