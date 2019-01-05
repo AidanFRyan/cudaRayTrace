@@ -200,21 +200,27 @@ __global__ void clearWorld(hitable_list ** world, int cluster){
 	delete[] (*world)->list;
 }
 //  bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
-__global__ void getColor(ray* curRay, hitable_list** world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
+__global__ void getColor(ray* curRay, hitable_list** world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits, bool* returned){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
 	grid_group g = this_grid();
 	int index = threadIdx.x+blockDim.x*blockIdx.x;
+	if(index == 0)
+		*returned=false;
+	g.sync();
 	// hit_record* hitRec = new hit_record[world->list_size];
 	// bool* hits = new bool[world->list_size];
-	
+	// printf("%d\n", index);
 	// ray curRay(A, B);
-	
+	// g.sync();
 	vec3 curLight = vec3(1,1,1);
-	for(int i = 0; i < 10; i++){
-		// if(index==1)
+	for(int i = 0; i < 10 && !*returned; i++){
+		// if(index==1 || index==0)
+		// printf("%d\n", index);
 		// printf("%f %f %f\n", curRay->B.x(), curRay->B.y(), curRay->B.z());
+		
 		
 		float max = FLT_MAX;
 		// const ray& r, const float& tmin, float& tmax, hit_record& rec, bool* d_hits, hit_record* d_recs, float* d_dmax
+		g.sync();
 		for(int j = index; j < (*world)->list_size; j+=gridDim.x*blockDim.x){
 			hits[j] = false;
 			hit_record rec;
@@ -244,10 +250,12 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 		}
 		// __syncthreads();
 		g.sync();
-		int powa = 0;
+		int powa;
 		for(int z = 1; int(powf(2, z))<=gridDim.x*blockDim.x; z++){
-			// g.sync();
+			g.sync();
 			powa = gridDim.x*blockDim.x/int(powf(2,z));
+			// if(index==123)
+			// printf("%d\n", powa);
 			if(hits[index])
 				max = hitRec[index].t;
 			else
@@ -276,14 +284,17 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 				// 	printf("%d %d %d %d\n", z, index, j, gridDim.x*blockDim.x/int(powf(2, z-1)));
 				// }
 				// if(index == 0)
-				// 	printf("%d %d %d %d %d\n", z, index, j, hits[index], hits[j]);
+				// 	printf("%d bool* cuRet = bool[count];%d %d %d %d\n", z, index, j, hits[index], hits[j]);
 
 					
 			}
 			// __syncthreads();
-			g.sync();
+			// g.sync();
 		}
 		// __syncthreads();
+		// if(index == 0){
+		// 	printf("0: %d\n", i);
+		// }
 		g.sync();
 		if(index == 0){
 			hit_record rec = hitRec[0];
@@ -303,14 +314,17 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 					curLight *= attenuation;
 					// printf("scattered %d: %f %f %f\n", i, attenuation.x(), attenuation.y(), attenuation.z());
 					*curRay = scattered;
-					// printf("%f %f %f\n", curRay->B.x(), curRay->B.y(), curRay->B.z());
-					if(rec.mat->emitter)
-						return;
+					if(rec.mat->emitter){
+						// printf("%f %f %f\n", rec.normal.x(), rec.normal.y(), rec.normal.z());
+						// assert(0);
+						*returned = true;
+					}
 				}
 				else{
 					// printf("hit but not scattered\n");
 					*color = vec3(0,0,0);
-					return;
+					*returned = true;
+					// assert(0);
 				}
 
 			}
@@ -321,10 +335,15 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 				float t = 0.5f*(unit_direction.y()+1.0f);
 				vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
 				*color = curLight * c;
-				return;
+				*returned = true;
+				// assert(0);
 			}
 		}
 		g.sync();
+		// if(index == 0){
+		// 	printf("0: %d\n", i);
+		// }
+		// g.sync();
 		// __syncthreads();
 		// if(index == 123)
 		// printf("%d: %f %f %f\n", i, curRay->B.x(), curRay->B.y(), curRay->B.z());
@@ -464,6 +483,11 @@ int main(int argc, char* argv[]){
 			ra[i][z] = new ray();
 		}
 	}
+	bool** cuRet = new bool*[count];
+	for(int i = 0; i < count; i++){
+		cudaSetDevice(i);
+		cudaMalloc((void**)&cuRet[i], sizeof(bool));
+	}
 	for(int j = 0; j < x*y; j+=count){
 			// vec3 col, *color, *d_color;
 			// color = new vec3();
@@ -492,7 +516,17 @@ int main(int argc, char* argv[]){
 		for(int z = 0; z < aaSamples; z++){
 			for(int i = 0; i < count; i++){
 				cudaSetDevice(i);
-				getColor<<<16, 1024>>>(d_ray[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
+				void** args = new void*[8];
+				args[0]=(void*)&d_ray[i][z];
+				args[1]=(void*)&world[i];
+				args[2]=(void*)&state[i];
+				args[3]=(void*)&j;
+				args[4]=(void*)&d_color[i][z];
+				args[5]=(void*)&hitRec[i];
+				args[6]=(void*)&hits[i];
+				args[7]=(void*)&cuRet[i];
+				gpuErrchk(cudaLaunchCooperativeKernel((void*)getColor, dim3(8,1,1), dim3(512,1,1), args));
+				// getColor<<<16, 1024>>>(d_ray[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
 				// cudaMemcpy(color, d_color, sizeof(vec3), cudaMemcpyDeviceToHost);
 				// col += *color;
 				// printf("%d %d\n", i, z);
@@ -500,6 +534,7 @@ int main(int argc, char* argv[]){
 			cudaDeviceSynchronize();	
 			// j++;
 		}
+		
 
 		// cudaDeviceSynchronize();
 		for(int i = 0; i < count; i++){

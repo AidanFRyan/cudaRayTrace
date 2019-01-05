@@ -464,6 +464,10 @@ __host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_ma
     diff[0] = p - verts[0];
     diff[1] = p - verts[1];
 	diff[2] = p - verts[2];
+	// e[0] = verts[1] - verts[0];
+    // e[1] = verts[2] - verts[1];
+    // e[2] = verts[0] - verts[2];
+	// printf("%f %f %f\n", e[0].x(), e[1].x(), e[2].x());
 	// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
 	// if(p.length() < t_max)
 		// printf("checking hit %f\n", temp);
@@ -822,9 +826,9 @@ __host__ __device__ Face& Face::operator=(const Face& in){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
-	e[0] = in.e[0];
-	e[1] = in.e[1];
-	e[2] = in.e[2];
+	e[0] = verts[1] - verts[0];
+    e[1] = verts[2] - verts[1];
+    e[2] = verts[0] - verts[2];
 	surfNorm = in.surfNorm;
 	// surfNorm.make_unit_vector();
 	// surfNorm = unit_vector(surfNorm);
@@ -874,9 +878,12 @@ __host__ __device__ Face::Face(const Face& in){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
-	e[0] = in.e[0];
-	e[1] = in.e[1];
-	e[2] = in.e[2];
+	e[0] = verts[1] - verts[0];
+    e[1] = verts[2] - verts[1];
+    e[2] = verts[0] - verts[2];
+	// e[0] = in.e[0];
+	// e[1] = in.e[1];
+	// e[2] = in.e[2];
 	surfNorm = in.surfNorm;
 	mat = in.mat;
 }
@@ -892,9 +899,9 @@ __host__ __device__ Face::Face(const Face& in, material* m){
     normals[0] = in.normals[0];
     normals[1] = in.normals[1];
 	normals[2] = in.normals[2];
-	e[0] = in.e[0];
-	e[1] = in.e[1];
-	e[2] = in.e[2];
+	e[0] = verts[1] - verts[0];
+    e[1] = verts[2] - verts[1];
+    e[2] = verts[0] - verts[2];
 	// printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
 	surfNorm = in.surfNorm;
 }
