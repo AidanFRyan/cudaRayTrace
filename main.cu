@@ -381,29 +381,28 @@ int main(int argc, char* argv[]){
 	uniform_real_distribution<>dis(0,1);
 	imgBuf = new vec3[x*y];
 	// color(const ray& r, hitable_list* world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits)
-	for(int j = 0; j < x*y; j+=count){
-		
-		vec3* col = new vec3[count];
-		vec3*** color = new vec3**[count];
-		vec3*** d_color = new vec3**[count];
-		ray *** d_r = new ray**[count], ***r = new ray**[count];
-		for(int i = 0; i < count; i++){
-			cudaSetDevice(i);
-			d_color[i] = new vec3*[aaSamples];
-			color[i] = new vec3*[aaSamples];
-			r[i] = new ray*[aaSamples];
-			d_r[i] = new ray*[aaSamples];
-			for(int z = 0; z < aaSamples; z++){
-				vec3* temp = new vec3();
-				// printf("%d %d\n", i, z);
-				gpuErrchk(cudaMalloc((void**)&temp, sizeof(vec3)));
-				d_color[i][z] = temp;
-				// printf("%p\n", d_color[i][z]);
-				color[i][z] = new vec3();
-				gpuErrchk(cudaMalloc((void**)&d_r[i][z], sizeof(ray)));
-				r[i][z] = new ray();
-			}
+	vec3* col = new vec3[count];
+	vec3*** color = new vec3**[count];
+	vec3*** d_color = new vec3**[count];
+	ray *** d_ray = new ray**[count], ***ra = new ray**[count];
+	for(int i = 0; i < count; i++){
+		d_color[i] = new vec3*[aaSamples];
+		color[i] = new vec3*[aaSamples];
+		ra[i] = new ray*[aaSamples];
+		d_ray[i] = new ray*[aaSamples];
+		cudaSetDevice(i);
+		for(int z = 0; z < aaSamples; z++){
+			vec3* temp = new vec3();
+			// printf("%d %d\n", i, z);
+			gpuErrchk(cudaMalloc((void**)&temp, sizeof(vec3)));
+			d_color[i][z] = temp;
+			// printf("%p\n", d_color[i][z]);
+			color[i][z] = new vec3();
+			gpuErrchk(cudaMalloc((void**)&d_ray[i][z], sizeof(ray)));
+			ra[i][z] = new ray();
 		}
+	}
+	for(int j = 0; j < x*y; j+=count){
 			// vec3 col, *color, *d_color;
 			// color = new vec3();
 		cudaDeviceSynchronize();
@@ -419,19 +418,19 @@ int main(int argc, char* argv[]){
 				v = (pixY+dis(gen)) / y;
 				// ray r;
 				
-				cam.get_ray(u, v, *r[i][z], gen);
+				cam.get_ray(u, v, *ra[i][z], gen);
 
 				// printf("%d %d\n", i, z);
 				// ray* d_r;
 				// gpuErrchk(cudaMalloc((void**)&d_r, sizeof(ray)));
-				cudaMemcpy(d_r[i][z], r[i][z], sizeof(ray), cudaMemcpyHostToDevice);
+				cudaMemcpy(d_ray[i][z], ra[i][z], sizeof(ray), cudaMemcpyHostToDevice);
 			}
 		}
 		cudaDeviceSynchronize();
 		for(int z = 0; z < aaSamples; z++){
 			for(int i = 0; i < count; i++){
 				cudaSetDevice(i);
-				getColor<<<1, 1024>>>(d_r[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
+				getColor<<<1, 1024>>>(d_ray[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
 				// cudaMemcpy(color, d_color, sizeof(vec3), cudaMemcpyDeviceToHost);
 				// col += *color;
 				// printf("%d %d\n", i, z);
@@ -455,27 +454,34 @@ int main(int argc, char* argv[]){
 		}
 		for(int i = 0; i < count; i++){
 			for(int z = 0; z < aaSamples; z++){
-				// delete color[i][z];
-				gpuErrchk(cudaFree(d_color[i][z]));
 				col[i] += *color[i][z];
-				// printf("%f %f %f\n", color[i][z]->r(), color[i][z]->r(), color[i][z]->r());
-				delete color[i][z];
 			}
-			delete[] color[i];
-			delete[] d_color[i];
-			col[i] /= aaSamples;
-			// col /= aaSamples;
-			imgBuf[j+i].set(col[i].x(), col[i].y(), col[i].z());
 			
-			// j++;
+			col[i] /= aaSamples;
+			imgBuf[j+i].set(col[i].x(), col[i].y(), col[i].z());
 		}
-		delete[] col;
-		delete[] color;
-		delete[] d_color;
+		
 		
 		// cudaDeviceSynchronize();
 		printf("%f%% finished\n", (float(j+count-1)/(x*y))*100);
 	}
+	for(int i = 0; i < count; i++){
+		for(int z = 0; z < aaSamples; z++){
+			gpuErrchk(cudaFree(d_color[i][z]));
+			delete color[i][z];
+			delete ra[i][z];
+			cudaFree(d_ray[i][z]);
+		}
+		delete[] color[i];
+		delete[] d_color[i];
+		delete[] d_ray[i];
+		delete[] ra[i];	
+	}
+	delete[] col;
+	delete[] color;
+	delete[] d_color;
+	delete[] ra;
+	delete[] d_ray;
 	cudaDeviceSynchronize();
 	printf("Done With Rendering, Copying to Disk/Cleaning\n");
 	for(int i = 0; i < count; i++){
