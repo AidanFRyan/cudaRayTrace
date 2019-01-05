@@ -1,7 +1,7 @@
 #ifndef TRACER_H
 #define TRACER_H
 
-
+#include <random>
 #include <iostream>
 #include <curand_kernel.h>
 #include <cfloat>
@@ -81,6 +81,7 @@ class ray{
 public:
 	__host__ __device__ ray();
 	__host__ __device__ ray(const vec3& a, const vec3& b);
+	__host__ __device__ ray& operator=(const ray& r);
 	__host__ __device__ vec3 origin() const;
 	__host__ __device__ vec3 direction() const;
 	__host__ __device__ vec3 p(float t) const;
@@ -140,6 +141,7 @@ public:
 	camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect);
 	camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float aperture, float focus_dist);
 	__device__ void get_ray(const float& u, const float& v, ray& r, curandState* state);
+	void get_ray(const float& u, const float& v, ray& r, mt19937 state);
 
 	vec3 origin;
 	vec3 ulc;

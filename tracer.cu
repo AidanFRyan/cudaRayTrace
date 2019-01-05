@@ -174,6 +174,11 @@ vec3 ray::direction() const{
 vec3 ray::p(float t) const{
 	return A + t*B;
 }
+ray& ray::operator=(const ray& r){
+	A = r.A;
+	B = r.B;
+	return *this;
+}
 
 sphere::sphere(){
 	center = vec3(0,0,0);
@@ -345,6 +350,19 @@ __device__ vec3 random_in_unit_disk(curandState* state){
 	return p;
 }
 
+vec3 random_in_unit_disk(mt19937 state){
+	// curandState state;
+	// curand_init(1234, threadIdx.x+blockDim.x*blockIdx.x, 0, &state);
+	uniform_real_distribution<>dis(0,1);
+	// printf("%f\n", state);
+	vec3 p;
+	do{
+		p = 2.0f*vec3(dis(state), dis(state), 0) - vec3(1,1,0);
+	}while(dot(p,p) >= 1.0f);
+	// printf("exiting riud\n");
+	return p;
+}
+
 camera::camera(){
 	ulc = vec3(-2, 1, -1);
 	horizontal = vec3(4, 0, 0);
@@ -392,7 +410,18 @@ camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float ap
 	vertical = 2*halfHeight*v*focus_dist;
 }
 __device__ void camera::get_ray(const float& s, const float& t, ray& r, curandState* state){
-	vec3 rd = lens_radius * random_in_unit_disk(state);
+	vec3 rd;
+	if(lens_radius > 0.001)
+		rd = lens_radius * random_in_unit_disk(state);
+	// printf("%f\n", v.y());
+	vec3 offset = u*rd.x() + v*rd.y();
+	r = ray(origin + offset, ulc+s*horizontal-t*vertical-origin-offset);
+}
+
+void camera::get_ray(const float& s, const float& t, ray& r, mt19937 state){
+	vec3 rd;
+	if(lens_radius > 0.001)
+		rd = lens_radius * random_in_unit_disk(state);
 	// printf("%f\n", v.y());
 	vec3 offset = u*rd.x() + v*rd.y();
 	r = ray(origin + offset, ulc+s*horizontal-t*vertical-origin-offset);

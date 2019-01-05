@@ -1,5 +1,6 @@
 #include "tracer.h"
 // #include "objRead.h"
+
 #include <OpenEXR/ImfNamespace.h>
 #include <OpenEXR/ImfOutputFile.h>
 #include <OpenEXR/ImfChannelList.h>
@@ -97,7 +98,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}
 			ray scattered;
 			vec3 attenuation;
 			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
-				// printf("hit a big ol' light\n");
+				printf("hit a big ol' light\n");
 				curLight *= attenuation;
 				return curLight;
 			}
@@ -171,6 +172,20 @@ __global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y, flo
 	}
 }
 
+__global__ void averageImgs(vec3* img, int x, int y, float* r, float* g, float* b, float* a){
+	int index = threadIdx.x + blockDim.x * blockIdx.x;
+	int pixelNum = index;
+	while(pixelNum < x*y){
+		// fin[pixelNum]/=count;
+		r[pixelNum] = img[pixelNum].r();
+		g[pixelNum] = img[pixelNum].g();
+		b[pixelNum] = img[pixelNum].b();
+		a[pixelNum] = 1.0f;
+		pixelNum += gridDim.x*blockDim.x;
+		
+	}
+}
+
 __global__ void clearWorld(hitable_list ** world, int cluster){
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	int curIndex = index*cluster;
@@ -183,6 +198,81 @@ __global__ void clearWorld(hitable_list ** world, int cluster){
 	__syncthreads();
 	if(index == 0)
 	delete[] (*world)->list;
+}
+//  bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
+__global__ void getColor(ray* curRay, hitable_list** world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
+	int index = threadIdx.x+blockDim.x*blockIdx.x;
+	// hit_record* hitRec = new hit_record[world->list_size];
+	// bool* hits = new bool[world->list_size];
+	
+	// ray curRay(A, B);
+	
+	for(int i = 0; i < 32; i++){
+		
+		float max = FLT_MAX;
+		// const ray& r, const float& tmin, float& tmax, hit_record& rec, bool* d_hits, hit_record* d_recs, float* d_dmax
+		for(int j = index; j < (*world)->list_size; j+=gridDim.x*blockDim.x){
+			hits[j] = false;
+			hit_record rec;
+			if((*world)->list[j]->hit(*curRay, 0.0001f, max, rec)){
+				hitRec[j] = rec;
+				hits[j] = true;
+				// if(j >= (*world)->list_size-1)
+				// 	printf("%d\n", j);
+			}
+			// printf("%d\n", j);
+		}
+		__syncthreads();
+		if(index == 0){
+			bool anyHit = false;
+			hit_record rec;
+			vec3 curLight = vec3(1,1,1);
+			for(int j = 0; j < (*world)->list_size; j++){
+				if(hits[j]){
+					if(hitRec[j].t < max){
+						max = hitRec[j].t;
+						anyHit = true;
+						rec = hitRec[j];
+					}
+				}
+			}
+		
+			if(anyHit){//}, d_hits, d_recs, d_dmax)){
+				ray scattered;
+				vec3 attenuation;
+				if(rec.mat->emitter && rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
+					// printf("hit a big ol' light\n");
+					curLight *= attenuation;
+					*color = curLight;
+					return;
+				}
+				else if(rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
+					// printf("scattered\n");
+					curLight *= attenuation;
+					*curRay = scattered;
+				}
+				else{
+					// printf("hit but not scattered\n");
+					*color = vec3(0,0,0);
+				}
+
+			}
+			else{
+				// return vec3(0,0,0);
+				// printf("to infinity!\n");
+				vec3 unit_direction = unit_vector(curRay->direction());
+				float t = 0.5f*(unit_direction.y()+1.0f);
+				vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
+				*color = curLight * c;
+			}
+		}
+		__syncthreads();
+	}
+
+	// if (index==0){
+	// 	printf("exceeded bounce count\n");
+	// 	*color = vec3(0.0f, 0.0f, 0.0f);
+	// }
 }
 
 int main(int argc, char* argv[]){
@@ -209,11 +299,11 @@ int main(int argc, char* argv[]){
 
 	int x = 1920;
 	int y = 1080;
-	int aaSamples = 8;
+	int aaSamples = 32;
 
-	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
+	vec3 *imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
-	imgBuf = new vec3*[count];
+	// imgBuf = new vec3*[count];
 	d_objs = new OBJ**[count];
 	h_d_objs = new OBJ**[count];
 	vec3 lookFrom(4, 1, 0);
@@ -225,13 +315,13 @@ int main(int argc, char* argv[]){
 	int numObjs = worldSize;
 	for(int i = 0; i < numOBJs; i++){
 		objs[i] = new OBJ(argv[i+1]);
-		totalSize += objs[i]->numFaces*sizeof(Face) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
+		totalSize += objs[i]->numFaces*sizeof(Face) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
 		numObjs += objs[i]->numFaces;
 	}
 	// numObjs+=worldSize;
 	totalSize*=2;
 	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
-	for(int i = firstDevice; i < count; i++){
+	for(int i = 0; i < count; i++){
 		// printf("%d\n", i);
 		
 		gpuErrchk(cudaSetDevice(i));
@@ -245,14 +335,14 @@ int main(int argc, char* argv[]){
 	}
 	cudaDeviceSynchronize();
 	printf("Beginning Rand Generation, %u bytes allocated\n", totalSize);
-	for(int i = firstDevice; i < count; i++){
+	for(int i = 0; i < count; i++){
 		// printf("%d\n", i);
 		gpuErrchk(cudaSetDevice(i));
 		initRand<<<4,512>>>(x*y, 1, aaSamples/count, state[i]);
 	}
 	gpuErrchk(cudaDeviceSynchronize());
 	printf("Beginning Copy of Faces to Device\n");
-	for(int i = firstDevice; i < count; i++){
+	for(int i = 0; i < count; i++){
 		gpuErrchk(cudaSetDevice(i));
 		for(int j = 0; j < numOBJs; j++){
 			// printf("%d %d\n", i, j);
@@ -263,56 +353,136 @@ int main(int argc, char* argv[]){
 		gpuErrchk(cudaDeviceSynchronize());
 	}	
 	printf("worldGenerator Beginning\n");
-	for(int i = firstDevice; i < count; i++){
+	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
 		worldGenerator<<<1,512>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
-	printf("Allocating Space for Hit Search\n");
+	// printf("Allocating Space for Hit Search\n");
 	cudaDeviceSynchronize();
-	// bool*** h_hits, ***d_hits;
-	// hit_record*** h_recs, ***d_recs;
-	// float*** h_dmax, ***d_dmax;
-	// h_hits = new bool**[count];
-	// h_recs = new hit_record**[count];
-	// h_dmax = new float**[count];
-	// d_hits = new bool**[count];
-	// d_recs = new hit_record**[count];
-	// d_dmax = new float**[count];
-	// for(int j = firstDevice; j < count; j++){
-	// 	cudaSetDevice(j);
-	// 	h_hits[j] = new bool*[x*y];
-	// 	h_recs[j] = new hit_record*[x*y];
-	// 	h_dmax[j] = new float*[x*y];
-	// 	gpuErrchk(cudaMalloc((void**)&d_hits[j], sizeof(bool*)*512));
-	// 	gpuErrchk(cudaMalloc((void**)&d_recs[j], sizeof(hit_record*)*512));
-	// 	gpuErrchk(cudaMalloc((void**)&d_dmax[j], sizeof(float*)*512));
-	// 	cudaDeviceSynchronize();
-	// 	for(int i = 0; i < 512; i++){
-	// 		gpuErrchk(cudaMalloc((void**)&h_hits[j][i], sizeof(bool)*numObjs));
-	// 		gpuErrchk(cudaMalloc((void**)&h_recs[j][i], sizeof(hit_record)*numObjs));
-	// 		gpuErrchk(cudaMalloc((void**)&h_dmax[j][i], sizeof(float)*numObjs));
-	// 		cudaDeviceSynchronize();
-	// 	}
-	// 	gpuErrchk(cudaMemcpy(d_hits[j], h_hits[j], sizeof(bool*)*512, cudaMemcpyHostToDevice));
-	// 	gpuErrchk(cudaMemcpy(d_recs[j], h_recs[j], sizeof(hit_record*)*512, cudaMemcpyHostToDevice));
-	// 	gpuErrchk(cudaMemcpy(d_dmax[j], h_dmax[j], sizeof(float*)*512, cudaMemcpyHostToDevice));
-	// }
-	// cudaDeviceSynchronize();
-	printf("Beginning Render\n");
-	for(int i = firstDevice; i < count; i++){
+	bool** hits = new bool*[count];
+	hit_record** hitRec = new hit_record*[count];
+	// vec3* color;
+	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
-		imageGenerator<<<1, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);//, d_hits[i], d_recs[i], d_dmax[i]);
-		imgBuf[i] = new vec3[x*y];	
+		cudaMalloc((void**)&hitRec[i], sizeof(hit_record)*numObjs);
+		cudaMalloc((void**)&hits[i], sizeof(bool)*numObjs);
+	}
+	cudaDeviceSynchronize();
+	printf("Beginning Render\n");
+	// for(int i = 0; i < count; i++){
+	// 	cudaSetDevice(i);
+	// 	imageGenerator<<<1, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);//, d_hits[i], d_recs[i], d_dmax[i]);
+	// 	imgBuf[i] = new vec3[x*y];
+	// }
+	random_device rd;
+	mt19937 gen(rd());
+	uniform_real_distribution<>dis(0,1);
+	imgBuf = new vec3[x*y];
+	// color(const ray& r, hitable_list* world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits)
+	for(int j = 0; j < x*y; j+=count){
+		
+		vec3* col = new vec3[count];
+		vec3*** color = new vec3**[count];
+		vec3*** d_color = new vec3**[count];
+		ray *** d_r = new ray**[count], ***r = new ray**[count];
+		for(int i = 0; i < count; i++){
+			cudaSetDevice(i);
+			d_color[i] = new vec3*[aaSamples];
+			color[i] = new vec3*[aaSamples];
+			r[i] = new ray*[aaSamples];
+			d_r[i] = new ray*[aaSamples];
+			for(int z = 0; z < aaSamples; z++){
+				vec3* temp = new vec3();
+				// printf("%d %d\n", i, z);
+				gpuErrchk(cudaMalloc((void**)&temp, sizeof(vec3)));
+				d_color[i][z] = temp;
+				// printf("%p\n", d_color[i][z]);
+				color[i][z] = new vec3();
+				gpuErrchk(cudaMalloc((void**)&d_r[i][z], sizeof(ray)));
+				r[i][z] = new ray();
+			}
+		}
+			// vec3 col, *color, *d_color;
+			// color = new vec3();
+		cudaDeviceSynchronize();
+		for(int i = 0; i < count; i++){
+			for(int z = 0; z < aaSamples; z++){
+				cudaSetDevice(i);
+				
+				int pixX = (j+i)%x, pixY = (j+i)/x;
+
+				
+				float u, v;
+				u = (pixX+dis(gen)) / x;
+				v = (pixY+dis(gen)) / y;
+				// ray r;
+				
+				cam.get_ray(u, v, *r[i][z], gen);
+
+				// printf("%d %d\n", i, z);
+				// ray* d_r;
+				// gpuErrchk(cudaMalloc((void**)&d_r, sizeof(ray)));
+				cudaMemcpy(d_r[i][z], r[i][z], sizeof(ray), cudaMemcpyHostToDevice);
+			}
+		}
+		cudaDeviceSynchronize();
+		for(int z = 0; z < aaSamples; z++){
+			for(int i = 0; i < count; i++){
+				cudaSetDevice(i);
+				getColor<<<1, 1024>>>(d_r[i][z], world[i], state[i], j, d_color[i][z], hitRec[i], hits[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
+				// cudaMemcpy(color, d_color, sizeof(vec3), cudaMemcpyDeviceToHost);
+				// col += *color;
+				// printf("%d %d\n", i, z);
+			}
+			cudaDeviceSynchronize();	
+			// j++;
+		}
+
+		// cudaDeviceSynchronize();
+		for(int i = 0; i < count; i++){
+			cudaSetDevice(i);
+			for(int z = 0; z < aaSamples; z++){
+				// printf("%d %d\n", i, z);
+				vec3* temp = new vec3();
+				// printf("%p\n", d_color[i][z]);
+				gpuErrchk(cudaMemcpy(temp, d_color[i][z], sizeof(vec3), cudaMemcpyDeviceToHost));
+				cudaDeviceSynchronize();
+				color[i][z] = temp;
+			}
+			
+		}
+		for(int i = 0; i < count; i++){
+			for(int z = 0; z < aaSamples; z++){
+				// delete color[i][z];
+				gpuErrchk(cudaFree(d_color[i][z]));
+				col[i] += *color[i][z];
+				// printf("%f %f %f\n", color[i][z]->r(), color[i][z]->r(), color[i][z]->r());
+				delete color[i][z];
+			}
+			delete[] color[i];
+			delete[] d_color[i];
+			col[i] /= aaSamples;
+			// col /= aaSamples;
+			imgBuf[j+i].set(col[i].x(), col[i].y(), col[i].z());
+			
+			// j++;
+		}
+		delete[] col;
+		delete[] color;
+		delete[] d_color;
+		
+		// cudaDeviceSynchronize();
+		printf("%f%% finished\n", (float(j+count-1)/(x*y))*100);
 	}
 	cudaDeviceSynchronize();
 	printf("Done With Rendering, Copying to Disk/Cleaning\n");
-	for(int i = firstDevice; i < count; i++){
+	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
 		
-		cudaMemcpy(imgBuf[i], d_img[i], sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
+		// cudaMemcpy(imgBuf[i], d_img[i], sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
 		cudaDeviceSynchronize();
 		cudaFree(state[i]);
 		cudaFree(world[i]);
@@ -329,22 +499,24 @@ int main(int argc, char* argv[]){
 	cudaSetDevice(count-1);
 	cudaDeviceSynchronize();
 	
-	vec3** d_imgs, **imgs;
-	vec3* finImg, *img;
+	vec3* d_imgs;
+	// vec3* finImg, *img;
+	cudaMalloc((void**)&d_imgs, sizeof(vec3)*x*y);
+	cudaMemcpy(d_imgs, imgBuf, sizeof(vec3)*x*y, cudaMemcpyHostToDevice);
+	
+	// imgs = new vec3[count];
+	// cudaMalloc((void**)&d_imgs, count*sizeof(vec3*));
+	// cudaMalloc((void**)&finImg, sizeof(vec3)*x*y);
+	// img = new vec3[x*y];
 
-	imgs = new vec3*[count];
-	cudaMalloc((void**)&d_imgs, count*sizeof(vec3*));
-	cudaMalloc((void**)&finImg, sizeof(vec3)*x*y);
-	img = new vec3[x*y];
-
-	for(int i = 0; i < count; i++){
-		cudaMalloc((void**)&imgs[i], x*y*sizeof(vec3));
-	}
-	cudaDeviceSynchronize();
-	for(int i = 0; i < count; i++){
-		cudaMemcpy(imgs[i], imgBuf[i], sizeof(vec3)*x*y, cudaMemcpyHostToDevice);
-	}
-	cudaMemcpy(d_imgs, imgs, count*sizeof(vec3*), cudaMemcpyHostToDevice);
+	// for(int i = 0; i < count; i++){
+	// 	cudaMalloc((void**)&imgs, x*y*sizeof(vec3));
+	// }
+	// cudaDeviceSynchronize();
+	// for(int i = 0; i < count; i++){
+	// 	cudaMemcpy(imgs, imgBuf, sizeof(vec3)*x*y, cudaMemcpyHostToDevice);
+	// }
+	// cudaMemcpy(d_imgs, imgs, count*sizeof(vec3*), cudaMemcpyHostToDevice);
 	
 	float *d_r, *d_g, *d_b, *d_a;
 	float *r, *g, *b, *a;
@@ -354,14 +526,14 @@ int main(int argc, char* argv[]){
 	cudaMalloc((void**)&d_a, sizeof(float)*x*y);
 	cudaDeviceSynchronize();
 
-	averageImgs<<<4, 512>>>(finImg, d_imgs, count, x, y, d_r, d_g, d_b, d_a);
+	averageImgs<<<4, 512>>>(d_imgs, x, y, d_r, d_g, d_b, d_a);
 	r = new float[x*y];
 	g = new float[x*y];
 	b = new float[x*y];
 	a = new float[x*y];
 	cudaDeviceSynchronize();
 
-	cudaMemcpy(img, finImg, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
+	// cudaMemcpy(imgBuf, imgBuf, sizeof(vec3)*x*y, cudaMemcpyDeviceToHost);
 	cudaMemcpy(r, d_r, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
 	cudaMemcpy(g, d_g, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
 	cudaMemcpy(b, d_b, sizeof(float)*x*y, cudaMemcpyDeviceToHost);
@@ -371,9 +543,9 @@ int main(int argc, char* argv[]){
 	cudaFree(d_g);
 	cudaFree(d_b);
 	cudaFree(d_a);
-	cudaFree(d_imgs);
-	cudaFree(finImg);
-	delete[] imgs;
+	// cudaFree(d_imgs);
+	// cudaFree(finImg);
+	// delete[] imgs;
 
 	Header header(x, y);
 	header.channels().insert("R", Channel(FLOAT));
@@ -401,6 +573,6 @@ int main(int argc, char* argv[]){
 	delete[] g;
 	delete[] b;
 	delete[] a;
-	delete[] img;
+	// delete[] img;
 	return 0;
 }
