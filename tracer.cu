@@ -641,6 +641,7 @@ __device__ light::light(vec3 att){
 __device__ bool light::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 	att = attenuation;
 	scattered = impacting;
+	printf("light!\n");
 	return true;
 }
 

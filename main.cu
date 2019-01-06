@@ -41,7 +41,7 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 	__syncthreads();
 	int curIndex = index*cluster;
 	
-	while(curIndex < (*world)->list_size){
+	while(curIndex < (*world)->list_size-wSize){
 		for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size-wSize; i++){
 			// int z = 0;
 			// for(int i = 0; i < n; i++){
@@ -70,7 +70,7 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 	}
 	__syncthreads();
 	if(index==0){
-		(*world)->list[(*world)->list_size-1] = new sphere(vec3(20, 0, 0), 5.0f, new light(vec3(200, 200, 200)));
+		(*world)->list[(*world)->list_size-1] = new sphere(vec3(8, 0, 0), 5.0f, new light(vec3(200, 200, 200)));
 	}
 }
 
@@ -222,6 +222,7 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 		// const ray& r, const float& tmin, float& tmax, hit_record& rec, bool* d_hits, hit_record* d_recs, float* d_dmax
 		g.sync();
 		for(int j = index; j < (*world)->list_size; j+=gridDim.x*blockDim.x){
+			// printf("%d %d\n");
 			hits[j] = false;
 			hit_record rec;
 			if((*world)->list[j]->hit(*curRay, 0.0001f, max, rec)){
@@ -230,6 +231,7 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 				// if(j >= (*world)->list_size-1)
 				// 	printf("%d\n", j);
 			}
+			// printf("%d %d\n", (*world)->list_size, j);
 			// printf("%d\n", j);
 		}
 		// __syncthreads();
@@ -310,7 +312,7 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 				// 	return;
 				// }
 				if(rec.mat->scatter(*curRay, rec, attenuation, scattered, &state[pixelNum])){
-					// printf("scattered\n");
+					printf("scattered\n");
 					curLight *= attenuation;
 					// printf("scattered %d: %f %f %f\n", i, attenuation.x(), attenuation.y(), attenuation.z());
 					*curRay = scattered;
@@ -321,7 +323,7 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 					}
 				}
 				else{
-					// printf("hit but not scattered\n");
+					printf("hit but not scattered\n");
 					*color = vec3(0,0,0);
 					*returned = true;
 					// assert(0);
@@ -330,7 +332,7 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 			}
 			else{
 				// return vec3(0,0,0);
-				// printf("to infinity!\n");
+				// printf("%d to infinity!\n", i);
 				vec3 unit_direction = unit_vector(curRay->direction());
 				float t = 0.5f*(unit_direction.y()+1.0f);
 				vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
@@ -345,8 +347,8 @@ __global__ void getColor(ray* curRay, hitable_list** world, curandState* state, 
 		// }
 		// g.sync();
 		// __syncthreads();
-		// if(index == 123)
-		// printf("%d: %f %f %f\n", i, curRay->B.x(), curRay->B.y(), curRay->B.z());
+		if(index == 123)
+		printf("%d: %f %f %f\n", i, curRay->B.x(), curRay->B.y(), curRay->B.z());
 	}
 
 	// if (index==0){
@@ -400,7 +402,7 @@ int main(int argc, char* argv[]){
 		numObjs += objs[i]->numFaces;
 	}
 	// numObjs+=worldSize;
-	totalSize*=2;
+	totalSize*=4;
 	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
 	for(int i = 0; i < count; i++){
 		// printf("%d\n", i);
@@ -437,8 +439,8 @@ int main(int argc, char* argv[]){
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
-		worldGenerator<<<1,1024>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
-		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
+		worldGenerator<<<1,256>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
+		gpuErrchk(cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y));
 	}
 	// printf("Allocating Space for Hit Search\n");
 	cudaDeviceSynchronize();
