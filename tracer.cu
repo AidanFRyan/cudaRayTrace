@@ -448,6 +448,7 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 }
 
 __host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+	// printf("%p\n", &r.B.e[0]);
 	float NdotDir = dot(surfNorm, r.direction());
 	if(abs(NdotDir) < .001){
 		// printf("parallel\n");
@@ -641,7 +642,7 @@ __device__ light::light(vec3 att){
 __device__ bool light::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 	att = attenuation;
 	scattered = impacting;
-	printf("light!\n");
+	// printf("light!\n");
 	return true;
 }
 
