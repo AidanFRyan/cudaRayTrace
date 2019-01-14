@@ -70,6 +70,12 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 	}
 	__syncthreads();
 	if(index==0){
+		(*world)->list[(*world)->list_size-10] = new sphere(vec3(4, 4, 0), 2, new lambertian(vec3(0.2f, 0.3f, 0.4f)));
+		(*world)->list[(*world)->list_size-9] = new sphere(vec3(3, 1, 0), 0.5f, new metal(vec3(0.2f, 0.6f, 0.8f), 1.4f));
+		(*world)->list[(*world)->list_size-8] = new sphere(vec3(3, 0, 1), 0.5f, new dielectric(1.5f));
+		(*world)->list[(*world)->list_size-7] = new sphere(vec3(5, -2, -5), 0.5f, new lambertian(vec3(0.5f, 0.2f, 0.8f)));
+		(*world)->list[(*world)->list_size-6] = new sphere(vec3(5, -2, 5), 0.5f, new dielectric(1.78f));
+
 		(*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 8, new lambertian(vec3(0.2f, 1, 0.4f)));
 		(*world)->list[(*world)->list_size-4] = new sphere(vec3(0, 1, 0), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
 		(*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 1), 0.5f, new dielectric(1.5f));
@@ -323,7 +329,7 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 						// printf("infinity\n");
 						vec3 unit_direction = unit_vector(curRay[blockIdx.x].direction());
 						float t = 0.5f*(unit_direction.y()+1.0f);
-						vec3 c = (1.0f-t)*vec3(0.1f, 0.1f, 0.1f) + t*vec3(0.2f, 0.1f, 0.3f);
+						vec3 c = (1.0f-t)*vec3(1, 0.1f, 0.1f) + t*vec3(0.2f, 0.1f, 1);
 						color[blockIdx.x] *= c;
 						returned[blockIdx.x] = true;
 					}
@@ -363,7 +369,7 @@ int main(int argc, char* argv[]){
 	curandState** state;
 	hitable *** list;
 	hitable_list ***world;// = new hitable_list(list, 2);
-	int worldSize = 5;
+	int worldSize = 10;
 	int count, firstDevice = 0;
 	gpuErrchk(cudaGetDeviceCount(&count));
 	// printf("numDevices: %d\n", count);
@@ -371,17 +377,17 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 100, numThreads = 256;
+	int numBlocks = 100, numThreads = 128;
 	int x = 2000;
 	int y = 1000;
-	int aaSamples = 64;
+	int aaSamples = 512;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
 	imgBuf = new vec3*[count];
 	d_objs = new OBJ**[count];
 	h_d_objs = new OBJ**[count];
-	vec3 lookFrom(5, 2, 0);
+	vec3 lookFrom(5, 2, 5);
 	vec3 lookAt(0,0,0);
 	float dist = (lookFrom-lookAt).length();
 	float ap = 0.0f;
