@@ -61,7 +61,7 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 					for(int z = 0; z < j; z++){
 						offset += objs[j]->numFaces;
 					}
-					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new metal(vec3(0.5f, 0.5f, 0.5f), 0));
+					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new lambertian(vec3(0.5f, 0.5f, 0.5f)));
 					// printf("%d %p\n", curIndex+i, (*world)->list[curIndex+i]);
 				}
 			}
@@ -76,11 +76,11 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 		(*world)->list[(*world)->list_size-7] = new sphere(vec3(5, -2, -5), 0.5f, new lambertian(vec3(0.5f, 0.2f, 0.8f)));
 		(*world)->list[(*world)->list_size-6] = new sphere(vec3(5, -2, 5), 0.5f, new dielectric(1.78f));
 
-		(*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 8, new lambertian(vec3(0.2f, 1, 0.4f)));
+		(*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 1, new lambertian(vec3(0.2f, 1, 0.4f)));
 		(*world)->list[(*world)->list_size-4] = new sphere(vec3(0, 1, 0), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
-		(*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 1), 0.5f, new dielectric(1.5f));
+		(*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 4), 0.5f, new dielectric(1.5f));
 		(*world)->list[(*world)->list_size-2] = new sphere(vec3(2, -1, 0), 0.5f, new lambertian(vec3(1.0f, 0.78f, 0.8f)));
-		(*world)->list[(*world)->list_size-1] = new sphere(vec3(15, -10, 0), 10, new light(vec3(2, 2, 2)));
+		(*world)->list[(*world)->list_size-1] = new sphere(vec3(15, -10, 0), 1, new light(vec3(2, 2, 2)));
 	}
 }
 
@@ -216,6 +216,9 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 	// grid_group g = this_grid();
 	int index = threadIdx.x;//+blockDim.x*blockIdx.x;
 	int worldSize = (*world)->list_size;
+	ray tRay;
+	hit_record rec;
+	int powa;
 	// int block = blockIdx.x;
 	// if(index==0){
 	// 	curRay = new ray();
@@ -239,6 +242,7 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 				
 				cam.get_ray(u, v, curRay[blockIdx.x], &state[k]);
 				returned[blockIdx.x] = false;
+				// printf("%d\n", worldSize);
 
 				// printf("%f %f %f\n", curRay->B.x(), curRay->B.y(), curRay->B.z());
 			}
@@ -247,51 +251,32 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 				
 				float max = FLT_MAX;
 				// __syncthreads();
-				for(int j = index; j < (*world)->list_size; j+=blockDim.x){
-					hits[j+blockIdx.x*worldSize] = false;
-					hit_record rec;
-					// printf("%p\n", &(curRay->B));
-					if((*world)->list[j]->hit( curRay[blockIdx.x], 0.0001f, max, rec)){
-						// printf("hit %d\n", i);
-						// printf("hit detected %d %d\n", index, j);
-						// printf("%d\n", j+blockIdx.x*worldSize);
-						hitRec[j+blockIdx.x*worldSize] = rec;
-						hits[j+blockIdx.x*worldSize] = true;
+				tRay = curRay[blockIdx.x];
+				bool anyHits = false;
+				for(int j = index; j < worldSize; j+= blockDim.x){
+					if((*world)->list[j]->hit(tRay, 0.0001f, max, rec)){
+						hitRec[blockIdx.x*blockDim.x+index] = rec;
+						anyHits = true;
 					}
 				}
+				
+				hits[blockDim.x*blockIdx.x + index] = anyHits;
 				__syncthreads();
-				// g.sync();
-				for(int j = index; j < (*world)->list_size; j+=blockDim.x){
-					// vec3 curLight = vec3(1,1,1);
-					// for(int j = 0; j < (*world)->list_size; j++){
-						if(hits[j+blockIdx.x*worldSize]){
-							if(hitRec[j+blockIdx.x*worldSize].t < max){
-								max = hitRec[j+blockIdx.x*worldSize].t;
-								hits[index+blockIdx.x*worldSize] = true;
-								hitRec[index+blockIdx.x*worldSize] = hitRec[j+blockIdx.x*worldSize];
-								
-							}
-						}
-					// }
-				}
-				__syncthreads();
-				// g.sync();
 				int powa;
 				for(int z = 1; int(powf(2, z))<=blockDim.x; z++){
 					// g.sync();
 					__syncthreads();
 					powa = blockDim.x/int(powf(2,z));
-					if(index < (*world)->list_size)
-						if(hits[index+blockIdx.x*worldSize])
-							max = hitRec[index+blockIdx.x*worldSize].t;
+					if(hits[index+blockIdx.x*blockDim.x])
+						max = hitRec[index+blockIdx.x*blockDim.x].t;
 					else
 						max = FLT_MAX;
-					for(int j = index+powa; j < powa*2 && j < (*world)->list_size; j+=powa){
-						if(hits[j+blockIdx.x*worldSize]){
-							if(hitRec[j+blockIdx.x*worldSize].t < max){
-								max = hitRec[j+blockIdx.x*worldSize].t;
-								hits[index+blockIdx.x*worldSize] = true;
-								hitRec[index+blockIdx.x*worldSize] = hitRec[j+blockIdx.x*worldSize];
+					for(int j = index+powa; j < powa*2 && j < blockDim.x; j+=powa){
+						if(hits[j+blockIdx.x*blockDim.x]){
+							if(hitRec[j+blockIdx.x*blockDim.x].t < max){
+								max = hitRec[j+blockIdx.x*blockDim.x].t;
+								hits[index+blockIdx.x*blockDim.x] = true;
+								hitRec[index+blockIdx.x*blockDim.x] = hitRec[j+blockIdx.x*blockDim.x];
 								// printf("hits\n");
 							}
 						}
@@ -299,42 +284,139 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 					__syncthreads();
 					// g.sync();
 				}
-				// g.sync();
-				__syncthreads();
+
 				if(index == 0){
-					hit_record rec = hitRec[blockIdx.x*worldSize];
-					
-					if(hits[blockIdx.x*worldSize]){//}, d_hits, d_recs, d_dmax)){
-						// printf("%d\n", i);
+					// hit_record record;
+					// bool hit = false;
+					// max = FLT_MAX;
+					// for(int j = 0; j < blockDim.x; j++){
+					// 	if(hits[j+blockIdx.x*blockDim.x] && hitRec[j+blockIdx.x*blockDim.x].t < max){
+					// 		// max = hitRec[j+blockIdx.x*blockDim.x].t;
+					// 		// printf("%d %f\n", hits[j+blockIdx.x*blockDim.x], hitRec[j+blockIdx.x*blockDim.x].t);
+					// 		rec = hitRec[j+blockIdx.x*blockDim.x];
+					// 		max = rec.t;
+					// 		hit = true;
+					// 	}
+					// }
+
+					if(hits[blockDim.x*blockIdx.x]){
 						ray scattered;
 						vec3 attenuation;
-						if(rec.mat->scatter(curRay[blockIdx.x], rec, attenuation, scattered, &state[k])){
-							// printf("scattered\n");
+						rec = hitRec[blockDim.x*blockIdx.x];
+						if(rec.mat->scatter(tRay, rec, attenuation, scattered, &state[k])){
 							color[blockIdx.x] *= attenuation;
 							curRay[blockIdx.x] = scattered;
 							if(rec.mat->emitter){
-								// printf("light\n");
 								returned[blockIdx.x] = true;
 							}
 						}
 						else{
-							color[blockIdx.x] = vec3(0,0,0);
+							color[blockIdx.x] = vec3();
 							returned[blockIdx.x] = true;
 						}
-
 					}
 					else{
-						// *color = vec3(0,0,0);
-						// returned[blockIdx.x] = true;
-						// printf("infinity\n");
-						vec3 unit_direction = unit_vector(curRay[blockIdx.x].direction());
+						vec3 unit_direction = unit_vector(tRay.direction());
 						float t = 0.5f*(unit_direction.y()+1.0f);
 						vec3 c = (1.0f-t)*vec3(1, 0.1f, 0.1f) + t*vec3(0.2f, 0.1f, 1);
 						color[blockIdx.x] *= c;
 						returned[blockIdx.x] = true;
 					}
-					// printf("%d %f %f %f %f %f %f\n", i, curRay->A.x(), curRay->A.y(), curRay->A.z(), curRay->B.x(), curRay->B.y(), curRay->B.z());
 				}
+
+				// for(int j = index; j < worldSize; j+=blockDim.x){
+					
+				// 	// printf("%d\n", j);
+				// 	if((*world)->list[j]->hit( tRay, 0.0001f, max, rec)){
+				// 		// printf("hit %d\n", i);
+						
+				// 		// printf("%d\n", j+blockIdx.x*worldSize);
+				// 		// curRay[blockIdx.x] = tRay;
+				// 		hitRec[j+blockIdx.x*worldSize] = rec;
+				// 		hits[j+blockIdx.x*worldSize] = true;
+				// 		// printf("hit detected %d %d %d\n", index, j, hits[j+blockIdx.x*worldSize]);
+				// 	}
+				// 	else{
+				// 		hits[j+blockIdx.x*worldSize] = false;
+				// 	}
+				// }
+				// __syncthreads();
+				// max = FLT_MAX;
+				// // g.sync();
+				// for(int j = index; j < worldSize; j+=blockDim.x){
+				// 	// vec3 curLight = vec3(1,1,1);
+				// 	// for(int j = 0; j < (*world)->list_size; j++){
+				// 		if(hits[j+blockIdx.x*worldSize]){
+				// 			if(hitRec[j+blockIdx.x*worldSize].t < max){
+				// 				max = hitRec[j+blockIdx.x*worldSize].t;
+				// 				hits[index+blockIdx.x*worldSize] = true;
+				// 				hitRec[index+blockIdx.x*worldSize] = hitRec[j+blockIdx.x*worldSize];
+								
+				// 			}
+				// 		}
+				// 	// }
+				// }
+				// __syncthreads();
+				// // g.sync();
+				
+				// for(int z = 1; int(powf(2, z))<=blockDim.x; z++){
+				// 	// g.sync();
+				// 	__syncthreads();
+				// 	powa = blockDim.x/int(powf(2,z));
+				// 	if(index < worldSize)
+				// 		if(hits[index+blockIdx.x*worldSize])
+				// 			max = hitRec[index+blockIdx.x*worldSize].t;
+				// 	else
+				// 		max = FLT_MAX;
+				// 	for(int j = index+powa; j < powa*2 && j < worldSize; j+=powa){
+				// 		if(hits[j+blockIdx.x*worldSize]){
+				// 			if(hitRec[j+blockIdx.x*worldSize].t < max){
+				// 				max = hitRec[j+blockIdx.x*worldSize].t;
+				// 				hits[index+blockIdx.x*worldSize] = true;
+				// 				hitRec[index+blockIdx.x*worldSize] = hitRec[j+blockIdx.x*worldSize];
+				// 				// printf("hits\n");
+				// 			}
+				// 		}
+				// 	}
+				// 	__syncthreads();
+				// 	// g.sync();
+				// }
+				// // g.sync();
+				// // __syncthreads();
+				// if(index == 0){
+				// 	rec = hitRec[blockIdx.x*worldSize];
+					
+				// 	if(hits[blockIdx.x*worldSize]){//}, d_hits, d_recs, d_dmax)){
+				// 		// printf("%d\n", i);
+				// 		ray scattered;
+				// 		vec3 attenuation;
+				// 		if(rec.mat->scatter(tRay, rec, attenuation, scattered, &state[k])){
+				// 			// printf("scattered\n");
+				// 			color[blockIdx.x] *= attenuation;
+				// 			curRay[blockIdx.x] = scattered;
+				// 			if(rec.mat->emitter){
+				// 				// printf("light\n");
+				// 				returned[blockIdx.x] = true;
+				// 			}
+				// 		}
+				// 		else{
+				// 			color[blockIdx.x] = vec3(0,0,0);
+				// 			returned[blockIdx.x] = true;
+				// 		}
+
+				// 	}
+				// 	else{
+				// 		// *color = vec3(0,0,0);
+				// 		// returned[blockIdx.x] = true;
+				// 		// printf("infinity\n");
+				// 		vec3 unit_direction = unit_vector(tRay.direction());
+				// 		float t = 0.5f*(unit_direction.y()+1.0f);
+				// 		vec3 c = (1.0f-t)*vec3(1, 0.1f, 0.1f) + t*vec3(0.2f, 0.1f, 1);
+				// 		color[blockIdx.x] *= c;
+				// 		returned[blockIdx.x] = true;
+				// 	}
+				// 	// printf("%d %f %f %f %f %f %f\n", i, curRay->A.x(), curRay->A.y(), curRay->A.z(), curRay->B.x(), curRay->B.y(), curRay->B.z());
+				// }
 				// g.sync();
 				__syncthreads();
 				// if(index == 0)
@@ -377,10 +459,10 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 100, numThreads = 128;
+	int numBlocks = 100, numThreads = 512;
 	int x = 2000;
 	int y = 1000;
-	int aaSamples = 512;
+	int aaSamples = 128;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
@@ -437,7 +519,7 @@ int main(int argc, char* argv[]){
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
-		worldGenerator<<<1,256>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
+		worldGenerator<<<1,512>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
 	// printf("Allocating Space for Hit Search\n");
@@ -449,14 +531,14 @@ int main(int argc, char* argv[]){
 	bool** cuRet = new bool*[count];
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
-		cudaMalloc((void**)&hitRec[i], sizeof(hit_record)*numObjs*numBlocks);
+		cudaMalloc((void**)&hitRec[i], sizeof(hit_record)*numThreads*numBlocks);
 		// host_record[i] = new hit_record*[numObjs];
-		cudaMalloc((void**)&hits[i], sizeof(bool)*numObjs*numBlocks);
+		cudaMalloc((void**)&hits[i], sizeof(bool)*numThreads*numBlocks);
 		cudaMalloc((void**)&d_ray[i], sizeof(ray)*numBlocks);
 		// cudaMalloc((void**)d_ray[i], sizeof(ray));
 		cudaMalloc((void**)&color[i], numBlocks*sizeof(vec3));
 		// cudaMalloc((void**)color[i], sizeof(vec3));
-		cudaMalloc((void**)&cuRet[i], sizeof(bool)*numObjs);
+		cudaMalloc((void**)&cuRet[i], sizeof(bool)*numBlocks);
 		// ray* tempRay;
 		// cudaMalloc((void**)&tempRay, sizeof(ray));
 		// vec3* d_color;

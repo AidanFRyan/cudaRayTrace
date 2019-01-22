@@ -448,6 +448,13 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 }
 
 __host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+	vec3 one = vec3(1,1,1);
+	for(int i = 0; i < 3; i++){
+		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
+			break;
+		if(i == 2)
+			return false;
+	}
 	// printf("%p\n", &r.B.e[0]);
 	float NdotDir = dot(surfNorm, r.direction());
 	if(abs(NdotDir) < .001){
