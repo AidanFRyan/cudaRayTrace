@@ -262,16 +262,17 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 				
 				hits[blockDim.x*blockIdx.x + index] = anyHits;
 				__syncthreads();
-				int powa;
-				for(int z = 1; int(powf(2, z))<=blockDim.x; z++){
+				// int powa;
+				for(unsigned int powa = 2; powa<=blockDim.x; powa=powa<<1){
 					// g.sync();
 					__syncthreads();
-					powa = blockDim.x/int(powf(2,z));
+					// powa = blockDim.x/int(powf(2,z));
+					int tp = blockDim.x/powa;
 					if(hits[index+blockIdx.x*blockDim.x])
 						max = hitRec[index+blockIdx.x*blockDim.x].t;
 					else
 						max = FLT_MAX;
-					for(int j = index+powa; j < powa*2 && j < blockDim.x; j+=powa){
+					for(int j = index+tp; j < tp*2 && j < blockDim.x; j+=tp){
 						if(hits[j+blockIdx.x*blockDim.x]){
 							if(hitRec[j+blockIdx.x*blockDim.x].t < max){
 								max = hitRec[j+blockIdx.x*blockDim.x].t;
@@ -411,7 +412,7 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 				// 		// printf("infinity\n");
 				// 		vec3 unit_direction = unit_vector(tRay.direction());
 				// 		float t = 0.5f*(unit_direction.y()+1.0f);
-				// 		vec3 c = (1.0f-t)*vec3(1, 0.1f, 0.1f) + t*vec3(0.2f, 0.1f, 1);
+				// 		vec3 c = (1.0f-t)*vec3(deactivate amazon account1, 0.1f, 0.1f) + t*vec3(0.2f, 0.1f, 1);
 				// 		color[blockIdx.x] *= c;
 				// 		returned[blockIdx.x] = true;
 				// 	}
@@ -462,7 +463,7 @@ int main(int argc, char* argv[]){
 	int numBlocks = 100, numThreads = 512;
 	int x = 2000;
 	int y = 1000;
-	int aaSamples = 128;
+	int aaSamples = 2;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
