@@ -61,7 +61,7 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 					for(int z = 0; z < j; z++){
 						offset += objs[j]->numFaces;
 					}
-					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new lambertian(vec3(0.5f, 0.5f, 0.5f)));
+					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
 					// printf("%d %p\n", curIndex+i, (*world)->list[curIndex+i]);
 				}
 			}
@@ -80,7 +80,7 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 		(*world)->list[(*world)->list_size-4] = new sphere(vec3(0, 1, 0), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
 		(*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 4), 0.5f, new dielectric(1.5f));
 		(*world)->list[(*world)->list_size-2] = new sphere(vec3(2, -1, 0), 0.5f, new lambertian(vec3(1.0f, 0.78f, 0.8f)));
-		(*world)->list[(*world)->list_size-1] = new sphere(vec3(15, -10, 0), 1, new light(vec3(2, 2, 2)));
+		(*world)->list[(*world)->list_size-1] = new sphere(vec3(-5, -5, -5), 3, new light(vec3(6, 6, 6)));
 	}
 }
 
@@ -214,11 +214,14 @@ __global__ void clearWorld(hitable_list ** world, int cluster){
 //  bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
 __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray* curRay, hitable_list** world, curandState* state, vec3* color, hit_record* hitRec, bool* hits, bool* returned){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
 	// grid_group g = this_grid();
+	int l_aaSamples = aaSamples;
 	int index = threadIdx.x;//+blockDim.x*blockIdx.x;
 	int worldSize = (*world)->list_size;
 	ray tRay;
 	hit_record rec;
 	int powa;
+	camera l_cam = cam;
+	curandState l_state;
 	// int block = blockIdx.x;
 	// if(index==0){
 	// 	curRay = new ray();
@@ -226,21 +229,21 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 	// }
 	// __shared__ bool aHit[(*world)->list_size];
 	for(int k = blockIdx.x; k < x*y; k+=gridDim.x){
-			
+		l_state = state[k];
 		// g.sync();
 		__syncthreads();
-		for(int aa = 0; aa < aaSamples; aa++){
+		for(int aa = 0; aa < l_aaSamples; aa++){
 			if(index == 0){
 				// printf("%d\n", i);
 				float pixX = k%x, pixY = k/x;
 				// *returned=false;
 				color[blockIdx.x] = vec3(1,1,1);
-				pixX += curand_uniform(&state[k]);
-				pixY += curand_uniform(&state[k]);
+				pixX += curand_uniform(&l_state);
+				pixY += curand_uniform(&l_state);
 				
 				float u = pixX/x, v = pixY/y;
 				
-				cam.get_ray(u, v, curRay[blockIdx.x], &state[k]);
+				l_cam.get_ray(u, v, curRay[blockIdx.x], &l_state);
 				returned[blockIdx.x] = false;
 				// printf("%d\n", worldSize);
 
@@ -304,7 +307,7 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 						ray scattered;
 						vec3 attenuation;
 						rec = hitRec[blockDim.x*blockIdx.x];
-						if(rec.mat->scatter(tRay, rec, attenuation, scattered, &state[k])){
+						if(rec.mat->scatter(tRay, rec, attenuation, scattered, &l_state)){
 							color[blockIdx.x] *= attenuation;
 							curRay[blockIdx.x] = scattered;
 							if(rec.mat->emitter){
@@ -463,7 +466,7 @@ int main(int argc, char* argv[]){
 	int numBlocks = 100, numThreads = 512;
 	int x = 2000;
 	int y = 1000;
-	int aaSamples = 2;
+	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];

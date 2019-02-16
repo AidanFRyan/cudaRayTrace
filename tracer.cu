@@ -600,10 +600,10 @@ __device__ float dielectric::schlick(const float& cosine, const float& indor) co
 
 __device__ vec3 random_in_unit_sphere(curandState* state){
 	vec3 p;
-	do {
+	// do {
 		p = 2*vec3(curand_uniform(state),curand_uniform(state),curand_uniform(state)) - vec3(1,1,1);
-	} while(p.squared_length() >= 1);
-	return p;
+	// } while(p.squared_length() >= 1);
+	return unit_vector(p);
 }
 
 // __device__ bool refract(const vec3&  v, const vec3& n, const float& ni_over_nt, vec3& refracted){
@@ -914,3 +914,52 @@ __host__ __device__ Face::Face(const Face& in, material* m){
 	// printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
 	surfNorm = in.surfNorm;
 }
+
+__device__ sss::sss(material* surf, const float& d, const vec3& internal){
+	attenuation = internal;
+	depth = d;
+	surface = surf;
+}
+
+__device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
+	if(dot(unit_vector(impacting.direction()), unit_vector(rec.normal)) > 0){
+		// printf("inside out %f %f %f, %f %f %f\n", rec.p.x(), rec.p.y(), rec.p.z(), impacting.direction().x(), impacting.direction().y(), impacting.direction().z());
+		vec3 temp = impacting.direction();
+		vec3 tAtt;
+		ray tScattered;
+		surface->scatter(impacting, rec, tAtt, tScattered, state);
+		do{
+			temp = random_in_unit_sphere(state);
+		}	while(dot(temp, rec.normal) <= 0);
+		scattered = ray(rec.p, impacting.direction() + temp);
+		float l = depth/(rec.p - impacting.origin()).length();
+		if(l > 1)
+			l = 1;
+		att = vec3(l, l, l);
+		att = tAtt;
+		att /= 2;
+		return true;
+		// return surface->scatter(impacting, rec, att, scattered, state);
+	}
+	else if(curand_uniform(state) > 0.5f){//determines if reflecting off surface
+		return surface->scatter(impacting, rec, att, scattered, state);
+	}
+	else{//or going inside
+		// vec3 internalTarget = (dot(rec.p, -rec.normal)/rec.normal.length()) * unit_vector(-rec.normal);
+		vec3 temp = impacting.direction();
+		do{
+			temp = random_in_unit_sphere(state);
+		}	while(dot(temp, rec.normal) >= 0);
+		// printf("%f %f %f, %f %f %f\n", rec.normal.x(), rec.normal.y(), rec.normal.z(), temp.x(), temp.y(), temp.z());
+		scattered = ray(rec.p, impacting.direction() + temp);
+		att = attenuation;
+		return true;
+	}
+}
+
+// __device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
+// 	vec3 target = rec.p+rec.normal+random_in_unit_sphere(state);
+// 	scattered = ray(rec.p, target-rec.p);
+// 	att = albedo;
+// 	return true;
+// }

@@ -206,6 +206,18 @@ public:
 	__device__ void move(const vec3& position, const float& time);
 };
 
+class sss : public material{
+public:
+	__device__ sss(material* surf, const float& d, const vec3& internal);
+	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
+
+private:
+	material* surface;
+	vec3 attenuation;
+	// int hits;
+	float depth;
+};
+
 class Face:public hitable{
 public:
     __host__ __device__ Face();
@@ -235,5 +247,6 @@ public:
     Face* object;
     int numFaces, faceBuffer;
 };
+
 
 #endif
