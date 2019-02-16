@@ -249,4 +249,25 @@ public:
 };
 
 
+class TreeNode : public hitable{
+public:
+	TreeNode *r, *l, *parent;
+	__device__ TreeNode();
+	__device__ TreeNode(hitable* in);
+	__host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+private:
+	hitable* objs;
+	float max[3], min[3], p;
+	short dim;
+};
+
+class TriTree : public hitable{
+public:
+	__device__ TriTree();
+	__device__ void insert(const hitable& in);
+	__host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+
+};
+
+
 #endif

@@ -957,6 +957,25 @@ __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& 
 	}
 }
 
+__device__ TreeNode::TreeNode(){
+
+}
+__device__ TreeNode::TreeNode(hitable* in){
+
+}
+__host__ __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+
+}
+
+__device__ TriTree::TriTree(){
+
+}
+__device__ void TriTree::insert(const hitable& in){
+
+}
+__host__ __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+
+}
 // __device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 // 	vec3 target = rec.p+rec.normal+random_in_unit_sphere(state);
 // 	scattered = ray(rec.p, target-rec.p);

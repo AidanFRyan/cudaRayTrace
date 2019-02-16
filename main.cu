@@ -219,7 +219,6 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 	int worldSize = (*world)->list_size;
 	ray tRay;
 	hit_record rec;
-	int powa;
 	camera l_cam = cam;
 	curandState l_state;
 	// int block = blockIdx.x;
@@ -442,8 +441,6 @@ __global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray
 }
 
 int main(int argc, char* argv[]){
-	int pixelCluster = 64;
-
 	// printf("%d\n", sizeof(Face));
 
 	// printf("%d\n", argc);
