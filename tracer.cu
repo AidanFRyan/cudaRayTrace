@@ -189,7 +189,7 @@ sphere::sphere(vec3 cen, float r, material* m){
 	radius = r;
 	mat = m;
 }
-bool sphere::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+__device__ bool sphere::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
 	vec3 oc = r.origin() - center;
 	float a = dot(r.direction(), r.direction());
 	float b = dot(oc, r.direction());
@@ -447,7 +447,7 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 	// printf("normals: %f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), avgNorms.x(), avgNorms.y(), avgNorms.z());
 }
 
-__host__ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+__device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
 	vec3 one = vec3(1,1,1);
 	for(int i = 0; i < 3; i++){
 		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
@@ -869,7 +869,7 @@ OBJ* OBJ::copyToDevice(){
     return d_obj;
 }
 
-__host__ __device__ bool OBJ::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+__device__ bool OBJ::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
     for(int i = 0; i < numFaces; i++){
         if(object[i].hit(r, tmin, tmax, rec))
             return true;
@@ -958,27 +958,89 @@ __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& 
 }
 
 __device__ TreeNode::TreeNode(){
-
+	parent = nullptr;
+	obj = nullptr;
+	dim = 0;
+	r = nullptr;
+	l = nullptr;
 }
-__device__ TreeNode::TreeNode(hitable* in){
-
+__device__ TreeNode::TreeNode(Face* in, TreeNode* par){
+	parent = par;
+	for(int i =0; i < 2; i++){
+		max[i] = FLT_MIN;
+		min[i] = FLT_MAX;
+		for(int j = 0; j < 2; j++){
+			if(in->verts[j].e[i] > max[i])
+				max[i] = in->verts[j].e[i];
+			if(in->verts[j].e[i] < min[i])
+				min[i] = in->verts[j].e[i];
+		}
+	}
+	dim = parent->dim<2 ? par->dim+1 : 0;
+	p = (max[dim] - min[dim])/2;	//note that this is mean value, may have to use median (probably won't matter)
+	obj = in;
 }
-__host__ __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+__device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+	return obj->hit(r, tmin, tmax, rec);
+}
 
+__device__ bool TreeNode::withinBB(const vec3& p){
+	for(int i = 0; i < 2; i++){
+		if(p.e[i] > max[i] || p.e[i] < min[i])
+			return false;
+	}
+	return true;
 }
 
 __device__ TriTree::TriTree(){
+	numNodes = 0;
+	head = new TreeNode();
+}
+__device__ void TriTree::insert(Face* in){
+	TreeNode* cur = head;
+	float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
+	while(cur->r != nullptr || cur->l != nullptr){
+		if(med[cur->dim] < cur->p){
+			if(cur->l == nullptr)
+				cur->l = new TreeNode(in, cur);
+			cur = cur->l;
+		}
+		else{
+			if(cur->r == nullptr)
+				cur->r = new TreeNode(in, cur);
+			cur = cur->r;
+		}
+	}
 
 }
-__device__ void TriTree::insert(const hitable& in){
-
+__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+	TreeNode* cur = head;
+	while(cur->r != nullptr || cur->l != nullptr){
+		vec3 pos = positionOnPlane(r, cur);
+		if(cur->withinBB(pos)){
+			if(cur->hit(r, tmin, tmax, rec))
+				return true;
+		}
+		else if(pos.e[cur->dim] < cur->p){
+			if(cur->l == nullptr)
+				return false;
+			cur = cur->l;
+		}
+		else{
+			if(cur->r == nullptr)
+				return false;
+			cur = cur->r;
+		}
+	}
+	return false;
 }
-__host__ __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
 
+__device__ vec3 TriTree::positionOnPlane(const ray& r, TreeNode* n) const {
+	vec3 planeNormal, planePos;
+	planeNormal.e[n->dim] = 1;
+	planePos.e[n->dim] = n->p;
+	vec3 toPlane = planeNormal*(planePos - r.origin());
+	vec3 vAdjusted = unit_vector(r.direction())*(dot(toPlane, r.direction())/r.direction().length());
+	vec3 poi = r.origin() + vAdjusted;
+	return poi;
 }
-// __device__ bool lambertian::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
-// 	vec3 target = rec.p+rec.normal+random_in_unit_sphere(state);
-// 	scattered = ray(rec.p, target-rec.p);
-// 	att = albedo;
-// 	return true;
-// }

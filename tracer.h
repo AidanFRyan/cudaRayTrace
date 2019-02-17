@@ -103,14 +103,14 @@ struct hit_record{
 
 class hitable{
 public:
-	__host__ __device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
+	__device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
 };
 
 class sphere: public hitable {
 public:
 	__host__ __device__ sphere();
 	__host__ __device__ sphere(vec3 cen, float r, material* m);
-	__host__ __device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+	__device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 
 	vec3 center;
 	float radius;
@@ -188,7 +188,7 @@ public:
 class volume : public hitable{
 public:
 	__device__ volume();
-	__host__ __device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
+	__device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
 };
 
 class light : public material{
@@ -222,7 +222,7 @@ class Face:public hitable{
 public:
     __host__ __device__ Face();
     __host__ __device__ Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3);
-    __host__ __device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const;
+    __device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const;
     __host__ __device__ Face& operator=(const Face& in);
     __host__ __device__ Face(const Face& in);
 	__host__ __device__ Face(const Face& in, material* m);
@@ -236,7 +236,7 @@ public:
     __host__ __device__ OBJ();
     OBJ(string fn);
     OBJ* copyToDevice();
-    __host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+    __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 // private:
     ifstream file, mtllib;
     vec3 *points, *text, *normals;
@@ -248,25 +248,35 @@ public:
     int numFaces, faceBuffer;
 };
 
-
+// class TriTree;
 class TreeNode : public hitable{
+	friend class TriTree;
 public:
 	TreeNode *r, *l, *parent;
 	__device__ TreeNode();
-	__device__ TreeNode(hitable* in);
-	__host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+	__device__ TreeNode(Face* in, TreeNode* par);
+	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+	__device__ bool withinBB(const vec3& p);
 private:
-	hitable* objs;
+	hitable* obj;
 	float max[3], min[3], p;
 	short dim;
+
+
+	
 };
 
 class TriTree : public hitable{
 public:
 	__device__ TriTree();
-	__device__ void insert(const hitable& in);
-	__host__ __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+	__device__ void insert(Face* in);
+	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+private:
+	__device__ vec3 positionOnPlane(const ray& r, TreeNode* n) const;
+	int numNodes;
+	TreeNode* head;
 
+	// friend class TreeNode;
 };
 
 
