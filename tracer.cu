@@ -1001,6 +1001,7 @@ __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (ma
 	int i = 0;
 	// float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
 	while(cur != nullptr){
+		cur->median = (cur->median+in->median)/2;
 		if(in->median.e[cur->dim] < cur->p){
 			prev = cur;
 			cur = cur->l;
@@ -1008,6 +1009,7 @@ __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (ma
 				prev->l = new TreeNode(in, prev);
 				break;
 			}
+			// else 
 
 		}
 		else{
@@ -1017,10 +1019,10 @@ __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (ma
 				prev->r = new TreeNode(in, prev);
 				break;
 			}
+			// else cur->median = (cur->median+in->median)/2;
 		}
 		i++;
 	}
-	// printf("Depth: %d\n", i);
 	if(head == nullptr){
 		head = new TreeNode(in, nullptr);
 	}
@@ -1160,12 +1162,23 @@ __device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) c
 	return true;
 }
 
-// __device__ void sphere::insert(void* in){
-
+// hitable* TriTree::copyToDevice(){
+// 	return descendCopy(head);
 // }
-// __device__ void Face::insert(void* in){
 
-// }
-// __device__ void TreeNode::insert(void* in){
-
+// TreeNode* TriTree::descendCopy(TreeNode* in){
+// 	TreeNode *r, *l, *par;
+// 	TreeNode* d_in;
+// 	Face* d_obj;
+// 	TreeNode *oldR = in->r, *oldL = in->l;
+// 	if(in->r != nullptr){
+// 		r = descendCopy(in->r);
+// 	}	else r = nullptr;
+// 	if(in->l != nullptr){
+// 		l = descendCopy(in->l);
+// 	}	else l = nullptr;
+// 	cudaMalloc((void**)&d_obj, sizeof(Face));
+// 	cudaMemcpy(Face)
+// 	cudaMalloc((void**)&d_in, sizeof(TriNode));
+// 	// cudaMemcpy()
 // }

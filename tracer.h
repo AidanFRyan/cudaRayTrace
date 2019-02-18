@@ -259,8 +259,8 @@ class TreeNode : public hitable{
 	friend class TriTree;
 public:
 	TreeNode *r, *l, *parent;
-	__device__ TreeNode();
-	__device__ TreeNode(Face* in, TreeNode* par);
+	__host__ __device__ TreeNode();
+	__host__ __device__ TreeNode(Face* in, TreeNode* par);
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 	__device__ bool withinBB(const vec3& p);
 	// __device__ void insert(Face* in);
@@ -269,21 +269,20 @@ private:
 	float max[3], min[3], p;
 	short dim;
 	vec3 median;
-
-
-	
+	// hitable* copyToDevice();	
 };
 
 class TriTree : public hitable{
 public:
-	__device__ TriTree();
-	__device__ void insert(Face* in);
+	__host__ __device__ TriTree();
+	__host__ __device__ void insert(Face* in);
 	__device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
-
+	hitable* copyToDevice();
 private:
 	__device__ bool positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const;
 	int numNodes;
 	TreeNode* head;
+	TreeNode* descendCopy(TreeNode*);
 
 	// friend class TreeNode;
 };
