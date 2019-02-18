@@ -232,7 +232,8 @@ public:
 	__host__ __device__ Face(const Face& in, material* m);
 	// __device__ virtual void insert(void* in);
 // private:
-    vec3 verts[3], texts[3], normals[3], surfNorm, e[3];
+    vec3 verts[3], texts[3], normals[3], surfNorm, e[3], median;
+    float max[3], min[3];
 	material* mat;
 };
 

@@ -44,7 +44,8 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 		for(int i = 0; i < numOBJs; i++){
 			for(int j =0; j < objs[i]->numFaces; j++){
 				// printf("inserting\n");
-				// printf("%d\n", j);
+				if(j % 1000 == 0)
+					printf("%d / %d\n", j, objs[i]->numFaces);
 				t->insert(new Face(objs[i]->object[j], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f))));
 			}
 		}	
@@ -474,11 +475,11 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 10, numThreads = 512;
-	int x = 1920;
-	int y = 1080;
-	// int x = 400;
-	// int y = 200;
+	int numBlocks = 1, numThreads = 512;
+	// int x = 1920;
+	// int y = 1080;
+	int x = 400;
+	int y = 200;
 	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);

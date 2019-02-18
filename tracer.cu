@@ -446,6 +446,17 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 	e[0] = verts[1] - verts[0];
     e[1] = verts[2] - verts[1];
     e[2] = verts[0] - verts[2];
+    median.set((v1.x()+v2.x()+v3.x())/3, (v1.y()+v2.y()+v3.y())/3, (v1.z()+v2.z()+v3.z())/3);
+    for(int i =0; i < 2; i++){
+		max[i] = FLT_MIN;
+		min[i] = FLT_MAX;
+		for(int j = 0; j < 2; j++){
+			if(verts[j].e[i] > max[i])
+				max[i] = verts[j].e[i];
+			if(verts[j].e[i] < min[i])
+				min[i] = verts[j].e[i];
+		}
+	}
     mat = nullptr;
 	// vec3 avgNorms = unit_vector((n1 + n2 + n3)/3);
 	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
@@ -770,6 +781,7 @@ __host__ __device__ Face::Face(){
 	e[0] = vec3();
 	e[1] = vec3();
 	e[2] = vec3();
+	median = vec3();
 	mat = nullptr;
 }
 
@@ -790,6 +802,13 @@ __host__ __device__ Face& Face::operator=(const Face& in){
     e[2] = verts[0] - verts[2];
 	surfNorm = in.surfNorm;
 	mat = in.mat;
+	median = in.median;
+	min[0] = in.min[0];
+	min[1] = in.min[1];
+	min[2] = in.min[2];
+	max[0] = in.max[0];
+	max[1] = in.max[1];
+	max[2] = in.max[2];
 	// surfNorm.make_unit_vector();
 	// surfNorm = unit_vector(surfNorm);
 	// vec3 temp = unit_vector(surfNorm);
@@ -844,6 +863,14 @@ __host__ __device__ Face::Face(const Face& in){
 	// e[0] = in.e[0];
 	// e[1] = in.e[1];
 	// e[2] = in.e[2];
+	median = in.median;
+	min[0] = in.min[0];
+	min[1] = in.min[1];
+	min[2] = in.min[2];
+	max[0] = in.max[0];
+	max[1] = in.max[1];
+	max[2] = in.max[2];
+	// surfNorm.make_uni
 	surfNorm = in.surfNorm;
 	mat = in.mat;
 }
@@ -863,6 +890,14 @@ __host__ __device__ Face::Face(const Face& in, material* m){
 	e[0] = verts[1] - verts[0];
     e[1] = verts[2] - verts[1];
     e[2] = verts[0] - verts[2];
+    min[0] = in.min[0];
+	min[1] = in.min[1];
+	min[2] = in.min[2];
+	max[0] = in.max[0];
+	max[1] = in.max[1];
+	max[2] = in.max[2];
+	// surfNorm.make_uni
+    median = in.median;
 	// printf("%f %f, %f %f, %f %f\n", verts[0].x(), in.verts[0].x(), verts[1].x(), in.verts[1].x(), verts[2].x(), in.verts[2].x());
 	surfNorm = in.surfNorm;
 }
@@ -921,25 +956,23 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	// obj = nullptr;
 	l = r = nullptr;
 	parent = par;
-	for(int i =0; i < 2; i++){
-		max[i] = FLT_MIN;
-		min[i] = FLT_MAX;
-		for(int j = 0; j < 2; j++){
-			if(in->verts[j].e[i] > max[i])
-				max[i] = in->verts[j].e[i];
-			if(in->verts[j].e[i] < min[i])
-				min[i] = in->verts[j].e[i];
-		}
-	}
+	min[0] = in->min[0];
+	min[1] = in->min[1];
+	min[2] = in->min[2];
+	max[0] = in->max[0];
+	max[1] = in->max[1];
+	max[2] = in->max[2];
+	// surfNorm.make_uni
 	if(par != nullptr)
 		dim = parent->dim<2 ? par->dim+1 : 0;
 	else{
 		dim = 0;
 	}
-	p = (max[dim] - min[dim])/2;	//note that this is mean value, may have to use median (probably won't matter)
+	median = in->median;
+	p = median[dim];	//note that this is mean value, may have to use median (probably won't matter)
 	obj = in;
 	// printf("%p\n", obj->mat);
-	median = vec3((max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2);
+	// median = vec3((max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2);
 }
 __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
 	// bool temp = false;
@@ -965,9 +998,10 @@ __device__ TriTree::TriTree(){
 __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (maybe precompute median on host side as part of Face)
 	TreeNode* cur = head, *prev = nullptr;	//bounding volume might make this more efficient for both insertion and hit search
 	numNodes++;
-	float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
+	int i = 0;
+	// float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
 	while(cur != nullptr){
-		if(med[cur->dim] < cur->p){
+		if(in->median.e[cur->dim] < cur->p){
 			prev = cur;
 			cur = cur->l;
 			if(cur == nullptr){
@@ -984,7 +1018,9 @@ __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (ma
 				break;
 			}
 		}
+		i++;
 	}
+	// printf("Depth: %d\n", i);
 	if(head == nullptr){
 		head = new TreeNode(in, nullptr);
 	}
