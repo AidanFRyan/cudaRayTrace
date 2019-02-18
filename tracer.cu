@@ -224,6 +224,10 @@ hitable_list::hitable_list(hitable **list, int n){
 	this->list = list;
 	list_size = n;
 }
+hitable_list::hitable_list(int n){
+	list_size = n;
+	this->list = new hitable*[n];
+}
 
 __global__ void listHits(int n, int cluster, bool* anyHits, const ray* r, hitable** list, hit_record* temp_rec, float* dist, float tmin, float tmax, bool* finished){
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
@@ -278,6 +282,7 @@ __device__ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, 
 	for(int i = 0; i < list_size; i++){
 		// printf("%d %d\n", i, list_size);
 		// printf("%d %d\n", list_size, i);
+		// printf("hh: %d %p %p %p %p\n", i, &r, &tmin, &closest, &temp_rec);
 		if(list[i]->hit(r, tmin, closest, temp_rec)){
 			// printf("%f, %f, %f\n", r.direction().x(), r.direction().y(), r.direction().z());
 			anyHits = true;
@@ -441,70 +446,14 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 	e[0] = verts[1] - verts[0];
     e[1] = verts[2] - verts[1];
     e[2] = verts[0] - verts[2];
+    mat = nullptr;
 	// vec3 avgNorms = unit_vector((n1 + n2 + n3)/3);
 	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
 	// if(avgNorms.x() != surfNorm.x() || avgNorms.y() != surfNorm.y() || avgNorms.z() != surfNorm.z())
 	// printf("normals: %f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), avgNorms.x(), avgNorms.y(), avgNorms.z());
 }
 
-__device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
-	vec3 one = vec3(1,1,1);
-	for(int i = 0; i < 3; i++){
-		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
-			break;
-		if(i == 2)
-			return false;
-	}
-	// printf("%p\n", &r.B.e[0]);
-	float NdotDir = dot(surfNorm, r.direction());
-	if(abs(NdotDir) < .001){
-		// printf("parallel\n");
-		return false;
-	}
-	float D = dot(surfNorm, verts[0]);
-	
-	float temp = -((dot(surfNorm, r.origin())-D)/NdotDir);
-	// printf("%f\n", temp);
-    vec3 p = (r.origin())+temp*(r.direction());
-    // vec3 e[3];
-    vec3 diff[3];
-    
-    diff[0] = p - verts[0];
-    diff[1] = p - verts[1];
-	diff[2] = p - verts[2];
-	// e[0] = verts[1] - verts[0];
-    // e[1] = verts[2] - verts[1];
-    // e[2] = verts[0] - verts[2];
-	// printf("%f %f %f\n", e[0].x(), e[1].x(), e[2].x());
-	// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
-	// if(p.length() < t_max)
-		// printf("checking hit %f\n", temp);
-	// else printf("t_max: %f\n", t_max);
-	// printf("verts:\n%f %f %f\n%f %f %f\n%f %f %f\np:\n%f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z());
 
-	for(int i = 0; i < 3; i++){
-		// printf("%f\n",dot(surfNorm, cross(e[i], diff[i])));
-        if(dot(surfNorm, cross(e[i], diff[i])) < 0){
-			return false;
-		}
-	}
-	// printf("ray is inside a triangle!\n");
-	// printf("D: %f\nverts:\n%f %f %f\n%f %f %f\n%f %f %f\np: %f %f %f\nr.origin: %f %f %f\nr.direction: %f %f %f\n", D, verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z(), r.origin().x(), r.origin().y(), r.origin().z(), r.direction().x(), r.direction().y(), r.direction().z());
-
-    if(temp < t_max && temp > t_min){
-		t_max = temp;
-		rec.mat = mat;
-		rec.t = temp;
-		rec.p = p;
-		rec.normal = surfNorm;
-		// printf("%f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), p.x(), p.y(), p.z());
-		// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
-		// printf("r.B: %f %f %f\n", r.B.x(), r.B.y(), r.B.z());
-		// printf("p: %f %f %f\nv1: %f %f %f\nv2: %f %f %f\nv3: %f %f %f\n", p.x(), p.y(), p.z(), verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
-        return true;
-    }
-    return false;
-}
 
 lambertian::lambertian(const vec3& a){
 	albedo = a;
@@ -821,6 +770,7 @@ __host__ __device__ Face::Face(){
 	e[0] = vec3();
 	e[1] = vec3();
 	e[2] = vec3();
+	mat = nullptr;
 }
 
 
@@ -839,6 +789,7 @@ __host__ __device__ Face& Face::operator=(const Face& in){
     e[1] = verts[2] - verts[1];
     e[2] = verts[0] - verts[2];
 	surfNorm = in.surfNorm;
+	mat = in.mat;
 	// surfNorm.make_unit_vector();
 	// surfNorm = unit_vector(surfNorm);
 	// vec3 temp = unit_vector(surfNorm);
@@ -898,6 +849,7 @@ __host__ __device__ Face::Face(const Face& in){
 }
 
 __host__ __device__ Face::Face(const Face& in, material* m){
+	// printf("creating mat %p\n", m);
 	mat = m;
 	verts[0] = in.verts[0];
     verts[1] = in.verts[1];
@@ -965,6 +917,9 @@ __device__ TreeNode::TreeNode(){
 	l = nullptr;
 }
 __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
+	// printf("inserted\n");
+	// obj = nullptr;
+	l = r = nullptr;
 	parent = par;
 	for(int i =0; i < 2; i++){
 		max[i] = FLT_MIN;
@@ -976,12 +931,23 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 				min[i] = in->verts[j].e[i];
 		}
 	}
-	dim = parent->dim<2 ? par->dim+1 : 0;
+	if(par != nullptr)
+		dim = parent->dim<2 ? par->dim+1 : 0;
+	else{
+		dim = 0;
+	}
 	p = (max[dim] - min[dim])/2;	//note that this is mean value, may have to use median (probably won't matter)
 	obj = in;
+	// printf("%p\n", obj->mat);
+	median = vec3((max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2);
 }
 __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
-	return obj->hit(r, tmin, tmax, rec);
+	// bool temp = false;
+	if(obj != nullptr){
+		// printf("%p %p %p %p %p\n", obj, &r, &tmin, &tmax, &rec);
+		return obj->hit(r, tmin, tmax, rec);
+	}
+	return false;
 }
 
 __device__ bool TreeNode::withinBB(const vec3& p){
@@ -994,53 +960,163 @@ __device__ bool TreeNode::withinBB(const vec3& p){
 
 __device__ TriTree::TriTree(){
 	numNodes = 0;
-	head = new TreeNode();
+	head = nullptr;
 }
 __device__ void TriTree::insert(Face* in){
-	TreeNode* cur = head;
+	TreeNode* cur = head, *prev = nullptr;
+	numNodes++;
 	float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
-	while(cur->r != nullptr || cur->l != nullptr){
+	while(cur != nullptr){
 		if(med[cur->dim] < cur->p){
-			if(cur->l == nullptr)
-				cur->l = new TreeNode(in, cur);
+			prev = cur;
 			cur = cur->l;
+			if(cur == nullptr){
+				prev->l = new TreeNode(in, prev);
+				break;
+			}
+
 		}
 		else{
-			if(cur->r == nullptr)
-				cur->r = new TreeNode(in, cur);
+			prev = cur;
 			cur = cur->r;
+			if(cur == nullptr){
+				prev->r = new TreeNode(in, prev);
+				break;
+			}
 		}
 	}
-
+	if(head == nullptr){
+		head = new TreeNode(in, nullptr);
+	}
 }
+
 __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
-	TreeNode* cur = head;
-	while(cur->r != nullptr || cur->l != nullptr){
-		vec3 pos = positionOnPlane(r, cur);
-		if(cur->withinBB(pos)){
-			if(cur->hit(r, tmin, tmax, rec))
-				return true;
+	TreeNode* cur = head;//, *t = nullptr;
+	TreeNode** stack = new TreeNode*[numNodes];
+	int stackSize = 0;
+	bool anyhit = false;
+	vec3 pos;
+	hit_record temprec;
+	float closest = tmax;
+	bool *position = new bool[numNodes];
+	do{
+		while(cur != nullptr){
+			stack[stackSize++] = cur;
+			if(cur->hit(r, tmin, closest, temprec)){
+				if(closest < tmax){
+					rec = temprec;
+					tmax = closest;
+					anyhit = true;
+				}
+			}
+			if(position[stackSize-1] = positionOnPlane(r, cur, pos)){//if intersection, pursue right or left path
+				if(pos.e[cur->dim] < cur->p)
+					cur = cur->l;
+				else cur = cur->r;
+			}
+			else cur = cur->l;
 		}
-		else if(pos.e[cur->dim] < cur->p){
-			if(cur->l == nullptr)
-				return false;
-			cur = cur->l;
+		while(stackSize > 0 && (position[stackSize-1] || stack[stackSize-1]->r == nullptr)){
+			stackSize--;
 		}
-		else{
-			if(cur->r == nullptr)
-				return false;
-			cur = cur->r;
+		if(stackSize > 0){
+			cur = stack[stackSize-1]->r;
+			stackSize--;
 		}
-	}
-	return false;
+	}	while(stackSize > 0);
+	delete[] stack;
+	delete[] position;
+	return anyhit;
 }
 
-__device__ vec3 TriTree::positionOnPlane(const ray& r, TreeNode* n) const {
-	vec3 planeNormal, planePos;
-	planeNormal.e[n->dim] = 1;
-	planePos.e[n->dim] = n->p;
-	vec3 toPlane = planeNormal*(planePos - r.origin());
-	vec3 vAdjusted = unit_vector(r.direction())*(dot(toPlane, r.direction())/r.direction().length());
-	vec3 poi = r.origin() + vAdjusted;
-	return poi;
+__device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+	// printf("called face hit\n");
+	vec3 one = vec3(1,1,1);
+	for(int i = 0; i < 3; i++){
+		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
+			break;
+		if(i == 2)
+			return false;
+	}
+	// printf("%p\n", &r.B.e[0]);
+	float NdotDir = dot(surfNorm, r.direction());
+	if(abs(NdotDir) < .001){
+		// printf("parallel\n");
+		return false;
+	}
+	float D = dot(surfNorm, verts[0]);
+	
+	float temp = -((dot(surfNorm, r.origin())-D)/NdotDir);
+	// printf("%f\n", temp);
+    vec3 p = (r.origin())+temp*(r.direction());
+    // vec3 e[3];
+    vec3 diff[3];
+    
+    diff[0] = p - verts[0];
+    diff[1] = p - verts[1];
+	diff[2] = p - verts[2];
+	// e[0] = verts[1] - verts[0];
+    // e[1] = verts[2] - verts[1];
+    // e[2] = verts[0] - verts[2];
+	// printf("%f %f %f\n", e[0].x(), e[1].x(), e[2].x());
+	// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
+	// if(p.length() < t_max)
+		// printf("checking hit %f\n", temp);
+	// else printf("t_max: %f\n", t_max);
+	// printf("verts:\n%f %f %f\n%f %f %f\n%f %f %f\np:\n%f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z());
+
+	for(int i = 0; i < 3; i++){
+		// printf("%f\n",dot(surfNorm, cross(e[i], diff[i])));
+        if(dot(surfNorm, cross(e[i], diff[i])) < 0){
+			return false;
+		}
+	}
+	// printf("ray is inside a triangle!\n");
+	// printf("D: %f\nverts:\n%f %f %f\n%f %f %f\n%f %f %f\np: %f %f %f\nr.origin: %f %f %f\nr.direction: %f %f %f\n", D, verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z(), r.origin().x(), r.origin().y(), r.origin().z(), r.direction().x(), r.direction().y(), r.direction().z());
+
+    if(temp < t_max && temp > t_min){
+		t_max = temp;
+		rec.mat = mat;
+		// printf("mat: %p %p\n", mat, &mat->emitter);
+		rec.t = temp;
+		rec.p = p;
+		rec.normal = surfNorm;
+		// printf("%f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), p.x(), p.y(), p.z());
+		// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
+		// printf("r.B: %f %f %f\n", r.B.x(), r.B.y(), r.B.z());
+		// printf("p: %f %f %f\nv1: %f %f %f\nv2: %f %f %f\nv3: %f %f %f\n", p.x(), p.y(), p.z(), verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
+        return true;
+    }
+    return false;
 }
+
+__device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const {
+	vec3 planeNormal;
+	int dimension = n->dim;
+	// printf("n->dim %d\n", n->dim);
+	dimension = dimension == 0 ? 2 : dimension-1;
+	planeNormal.e[dimension] = 1;
+	// planePos.e[dimension] = n->p;
+	// planePos = n->median;
+	float denom = dot(r.direction(), planeNormal);
+	// printf("%f\n", denom);
+	if(abs(denom) < 0.0001f)
+		return false;
+	vec3 vAdjusted = r.direction()*-dot((n->median - r.origin()), planeNormal)/denom;
+	poi = r.origin() + vAdjusted;
+	// if(threadIdx.x == 0){
+		// printf("%f %f %f\n", poi.x(), poi.y(), poi.z());
+		// printf("%d %d\n", n->dim, dimension);
+	// }
+	return true;
+}
+
+// __device__ void sphere::insert(void* in){
+
+// }
+// __device__ void Face::insert(void* in){
+
+// }
+// __device__ void TreeNode::insert(void* in){
+
+// }

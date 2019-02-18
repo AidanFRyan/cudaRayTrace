@@ -101,9 +101,11 @@ struct hit_record{
 	material *mat;
 };
 
+
 class hitable{
 public:
 	__device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
+	// __device__ virtual void insert(void* in) = 0;
 };
 
 class sphere: public hitable {
@@ -111,7 +113,7 @@ public:
 	__host__ __device__ sphere();
 	__host__ __device__ sphere(vec3 cen, float r, material* m);
 	__device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
-
+	// __device__ virtual void insert(void* in);
 	vec3 center;
 	float radius;
 	material * mat;
@@ -121,6 +123,7 @@ class OBJ;
 class hitable_list{
 public:
 	__host__ __device__ hitable_list();
+	__host__ __device__ hitable_list(int n);
 	__host__ __device__ hitable_list(hitable **list, int n);
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec);//, bool* d_hits, hit_record* d_recs, float* d_dmax) const;
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec, int index);
@@ -189,6 +192,7 @@ class volume : public hitable{
 public:
 	__device__ volume();
 	__device__ virtual bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
+	// __device__ virtual void insert(void* in);
 };
 
 class light : public material{
@@ -226,6 +230,7 @@ public:
     __host__ __device__ Face& operator=(const Face& in);
     __host__ __device__ Face(const Face& in);
 	__host__ __device__ Face(const Face& in, material* m);
+	// __device__ virtual void insert(void* in);
 // private:
     vec3 verts[3], texts[3], normals[3], surfNorm, e[3];
 	material* mat;
@@ -257,10 +262,12 @@ public:
 	__device__ TreeNode(Face* in, TreeNode* par);
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 	__device__ bool withinBB(const vec3& p);
+	// __device__ void insert(Face* in);
 private:
-	hitable* obj;
+	Face* obj;
 	float max[3], min[3], p;
 	short dim;
+	vec3 median;
 
 
 	
@@ -270,9 +277,10 @@ class TriTree : public hitable{
 public:
 	__device__ TriTree();
 	__device__ void insert(Face* in);
-	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+	__device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
+
 private:
-	__device__ vec3 positionOnPlane(const ray& r, TreeNode* n) const;
+	__device__ bool positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const;
 	int numNodes;
 	TreeNode* head;
 

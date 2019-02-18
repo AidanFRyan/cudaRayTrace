@@ -35,41 +35,53 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 		// printf("Trying to create hitable_list\n");
 		// printf("numObjs: %d\n", numOBJs);
 		
-		*world = new hitable_list(objs, numOBJs, wSize);
-		
-	}
-	__syncthreads();
-	int curIndex = index*cluster;
-	
-	while(curIndex < (*world)->list_size-wSize){
-		for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size-wSize; i++){
-			// int z = 0;
-			// for(int i = 0; i < n; i++){
-			// 	for(int j = 0; j < in[i]->numFaces; j++){
-			// 		// printf("j: %d\n", j);
-			// 		list[z] = new Face(in[i]->object[j], new light(vec3(4, 2, 2)));
-			// 		// *list[z] = in[z];
-			// 		z++;
-			// 		if(z%10000 == 0)
-			// 			printf("%d\n", z);
-			// 	}
-			// }
-			int totalFaces = 0, offset = 0;
-			for(int j = 0; j < numOBJs; j++){
-				totalFaces += objs[j]->numFaces;
-				if(curIndex+i < totalFaces){
-					for(int z = 0; z < j; z++){
-						offset += objs[j]->numFaces;
-					}
-					(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
-					// printf("%d %p\n", curIndex+i, (*world)->list[curIndex+i]);
-				}
+		// *world = new hitable_list(objs, numOBJs, wSize);
+		TriTree* t = new TriTree();
+		*world = new hitable_list(wSize+1);
+		// (*world)->list[0] = new TriTree();
+		// printf("%d\n", (*world)->list_size);
+		// printf("%d\n", numOBJs);
+		for(int i = 0; i < numOBJs; i++){
+			for(int j =0; j < objs[i]->numFaces; j++){
+				// printf("inserting\n");
+				// printf("%d\n", j);
+				t->insert(new Face(objs[i]->object[j], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f))));
 			}
-		}
-		curIndex += gridDim.x*blockDim.x;
-	}
-	__syncthreads();
-	if(index==0){
+		}	
+		(*world)->list[0] = t;
+	// }
+	// __syncthreads();
+	// int curIndex = index*cluster;
+	
+	// while(curIndex < (*world)->list_size-wSize){
+	// 	for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size-wSize; i++){
+	// 		// int z = 0;
+	// 		// for(int i = 0; i < n; i++){
+	// 		// 	for(int j = 0; j < in[i]->numFaces; j++){
+	// 		// 		// printf("j: %d\n", j);
+	// 		// 		list[z] = new Face(in[i]->object[j], new light(vec3(4, 2, 2)));
+	// 		// 		// *list[z] = in[z];
+	// 		// 		z++;
+	// 		// 		if(z%10000 == 0)
+	// 		// 			printf("%d\n", z);
+	// 		// 	}
+	// 		// }
+	// 		int totalFaces = 0, offset = 0;
+	// 		for(int j = 0; j < numOBJs; j++){
+	// 			totalFaces += objs[j]->numFaces;
+	// 			if(curIndex+i < totalFaces){
+	// 				for(int z = 0; z < j; z++){
+	// 					offset += objs[j]->numFaces;
+	// 				}
+	// 				(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
+	// 				// printf("%d %p\n", curIndex+i, (*world)->list[curIndex+i]);
+	// 			}
+	// 		}
+	// 	}
+	// 	curIndex += gridDim.x*blockDim.x;
+	// }
+	// __syncthreads();
+	// if(index==0){
 		(*world)->list[(*world)->list_size-10] = new sphere(vec3(4, 4, 0), 2, new lambertian(vec3(0.2f, 0.3f, 0.4f)));
 		(*world)->list[(*world)->list_size-9] = new sphere(vec3(3, 1, 0), 0.5f, new metal(vec3(0.2f, 0.6f, 0.8f), 1.4f));
 		(*world)->list[(*world)->list_size-8] = new sphere(vec3(3, 0, 1), 0.5f, new dielectric(1.5f));
@@ -107,10 +119,12 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}
 		if(world->hit(curRay, 0.00001f, max, rec)){//}, d_hits, d_recs, d_dmax)){
 			ray scattered;
 			vec3 attenuation;
-			if(rec.mat->emitter && rec.mat->scatter(r, rec, attenuation, scattered, state)){
+			if(rec.mat->emitter){
+				if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
 				// printf("hit a big ol' light\n");
 				curLight *= attenuation;
 				return curLight;
+				}
 			}
 			else if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
 				// printf("scattered\n");
@@ -159,7 +173,7 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 			col /= aa;
 			img[pixelNum+i].set(col[0], col[1], col[2]);
 		}
-		if(index == 0)
+		if(threadIdx.x == 0)
 			printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
 		pixelNum += blockDim.x*gridDim.x;
 	}
@@ -211,8 +225,8 @@ __global__ void clearWorld(hitable_list ** world, int cluster){
 	if(index == 0)
 		delete[] (*world)->list;
 }
-//  bool hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const = 0;
-__global__ void getColor(int x, int y, int aaSamples, camera cam, vec3* img, ray* curRay, hitable_list** world, curandState* state, vec3* color, hit_record* hitRec, bool* hits, bool* returned){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
+
+__global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec3* img, ray* curRay, hitable_list** world, curandState* state, vec3* color, hit_record* hitRec, bool* hits, bool* returned){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
 	// grid_group g = this_grid();
 	int l_aaSamples = aaSamples;
 	int index = threadIdx.x;//+blockDim.x*blockIdx.x;
@@ -460,9 +474,11 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 100, numThreads = 512;
-	int x = 2000;
-	int y = 1000;
+	int numBlocks = 10, numThreads = 512;
+	int x = 1920;
+	int y = 1080;
+	// int x = 400;
+	// int y = 200;
 	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
@@ -479,11 +495,13 @@ int main(int argc, char* argv[]){
 	int numObjs = worldSize;
 	for(int i = 0; i < numOBJs; i++){
 		objs[i] = new OBJ(argv[i+1]);
-		totalSize += objs[i]->numFaces*sizeof(Face) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3) + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
+		totalSize += objs[i]->numFaces*sizeof(TreeNode) + numBlocks*numThreads*objs[i]->numFaces*sizeof(TreeNode*) + numBlocks*numThreads*objs[i]->numFaces*sizeof(bool) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3) + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
 		numObjs += objs[i]->numFaces;
 	}
 	// numObjs+=worldSize;
 	totalSize*=4;
+	// totalSize += 512*2000*sizeof(bool);
+	// totalSize += 512*1000*sizeof(TreeNode*);
 	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
 	for(int i = 0; i < count; i++){
 		// printf("%d\n", i);
@@ -520,34 +538,34 @@ int main(int argc, char* argv[]){
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		
-		worldGenerator<<<1,512>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
+		worldGenerator<<<1,1>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
 	// printf("Allocating Space for Hit Search\n");
 	cudaDeviceSynchronize();
-	bool** hits = new bool*[count];
-	hit_record** hitRec = new hit_record*[count];//, ***host_record = new hit_record**[count];
-	vec3** color = new vec3*[count];
-	ray** d_ray = new ray*[count];
-	bool** cuRet = new bool*[count];
-	for(int i = 0; i < count; i++){
-		cudaSetDevice(i);
-		cudaMalloc((void**)&hitRec[i], sizeof(hit_record)*numThreads*numBlocks);
-		// host_record[i] = new hit_record*[numObjs];
-		cudaMalloc((void**)&hits[i], sizeof(bool)*numThreads*numBlocks);
-		cudaMalloc((void**)&d_ray[i], sizeof(ray)*numBlocks);
-		// cudaMalloc((void**)d_ray[i], sizeof(ray));
-		cudaMalloc((void**)&color[i], numBlocks*sizeof(vec3));
-		// cudaMalloc((void**)color[i], sizeof(vec3));
-		cudaMalloc((void**)&cuRet[i], sizeof(bool)*numBlocks);
-		// ray* tempRay;
-		// cudaMalloc((void**)&tempRay, sizeof(ray));
-		// vec3* d_color;
-		// cudaMalloc((void**)&d_color, sizeof(vec3));
-		// cudaMemcpy(d_ray[i], tempRay, sizeof(ray*), cudaMemcpyHostToDevice);
-		// cudaMemcpy(color[i], d_color, sizeof(vec3*), cudaMemcpyHostToDevice);
-	}
-	cudaDeviceSynchronize();
+	// bool** hits = new bool*[count];
+	// hit_record** hitRec = new hit_record*[count];//, ***host_record = new hit_record**[count];
+	// vec3** color = new vec3*[count];
+	// ray** d_ray = new ray*[count];
+	// bool** cuRet = new bool*[count];
+	// for(int i = 0; i < count; i++){
+	// 	cudaSetDevice(i);
+	// 	cudaMalloc((void**)&hitRec[i], sizeof(hit_record)*numThreads*numBlocks);
+	// 	// host_record[i] = new hit_record*[numObjs];
+	// 	cudaMalloc((void**)&hits[i], sizeof(bool)*numThreads*numBlocks);
+	// 	cudaMalloc((void**)&d_ray[i], sizeof(ray)*numBlocks);
+	// 	// cudaMalloc((void**)d_ray[i], sizeof(ray));
+	// 	cudaMalloc((void**)&color[i], numBlocks*sizeof(vec3));
+	// 	// cudaMalloc((void**)color[i], sizeof(vec3));
+	// 	cudaMalloc((void**)&cuRet[i], sizeof(bool)*numBlocks);
+	// 	// ray* tempRay;
+	// 	// cudaMalloc((void**)&tempRay, sizeof(ray));
+	// 	// vec3* d_color;
+	// 	// cudaMalloc((void**)&d_color, sizeof(vec3));
+	// 	// cudaMemcpy(d_ray[i], tempRay, sizeof(ray*), cudaMemcpyHostToDevice);
+	// 	// cudaMemcpy(color[i], d_color, sizeof(vec3*), cudaMemcpyHostToDevice);
+	// }
+	// cudaDeviceSynchronize();
 	// for(int d = 0; d < count; d++){
 	// 	hit_record* temp = new hit_record;
 	// 	for(int i = 0; i < numObjs; i++){
@@ -560,8 +578,8 @@ int main(int argc, char* argv[]){
 	printf("Beginning Render\n");
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
-		// imageGenerator<<<1, 512>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);//, d_hits[i], d_recs[i], d_dmax[i]);
-		getColor<<<numBlocks, numThreads>>>(x, y, aaSamples/count, cam, d_img[i], d_ray[i], world[i], state[i], color[i], hitRec[i], hits[i], cuRet[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
+		imageGenerator<<<numBlocks, numThreads>>>(x, y, 1, cam, aaSamples/count, world[i], d_img[i], state[i]);//, d_hits[i], d_recs[i], d_dmax[i]);
+		// getColor<<<numBlocks, numThreads>>>(x, y, aaSamples/count, cam, d_img[i], d_ray[i], world[i], state[i], color[i], hitRec[i], hits[i], cuRet[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
 		imgBuf[i] = new vec3[x*y];
 	}
 	// random_device rd;
