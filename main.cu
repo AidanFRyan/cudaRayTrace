@@ -173,8 +173,8 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 			col /= aa;
 			img[pixelNum+i].set(col[0], col[1], col[2]);
 		}
-		if(threadIdx.x == 0)
-			printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
+		// if(threadIdx.x == 0)
+		// 	printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
 		pixelNum += blockDim.x*gridDim.x;
 	}
 }

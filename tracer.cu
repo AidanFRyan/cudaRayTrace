@@ -962,8 +962,8 @@ __device__ TriTree::TriTree(){
 	numNodes = 0;
 	head = nullptr;
 }
-__device__ void TriTree::insert(Face* in){
-	TreeNode* cur = head, *prev = nullptr;
+__device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (maybe precompute median on host side as part of Face)
+	TreeNode* cur = head, *prev = nullptr;	//bounding volume might make this more efficient for both insertion and hit search
 	numNodes++;
 	float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
 	while(cur != nullptr){
@@ -990,7 +990,7 @@ __device__ void TriTree::insert(Face* in){
 	}
 }
 
-__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
+__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//Need to fix math/logic error in positionOnPlane
 	TreeNode* cur = head;//, *t = nullptr;
 	TreeNode** stack = new TreeNode*[numNodes];
 	int stackSize = 0;
@@ -1010,9 +1010,17 @@ __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_r
 				}
 			}
 			if(position[stackSize-1] = positionOnPlane(r, cur, pos)){//if intersection, pursue right or left path
-				if(pos.e[cur->dim] < cur->p)
+				// if (threadIdx.x == 0) printf("%f < %f?\n", pos.e[cur->dim], cur->p);
+				if(pos.e[cur->dim] < cur->p){
+					// if(threadIdx.x == 0)
+					// 	printf("%p Left %p\n", cur, cur->l);
 					cur = cur->l;
-				else cur = cur->r;
+				}
+				else {
+					// if(threadIdx.x == 0)
+					// 	printf("%p Right %p\n", cur, cur->r);
+					cur = cur->r;
+				}
 			}
 			else cur = cur->l;
 		}
@@ -1090,8 +1098,8 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
     return false;
 }
 
-__device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const {
-	vec3 planeNormal;
+__device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const {	//TODO: fix error where half the triangles don't render at all (has to do with left/right in plane for each tri)
+	vec3 planeNormal;//, planePos;
 	int dimension = n->dim;
 	// printf("n->dim %d\n", n->dim);
 	dimension = dimension == 0 ? 2 : dimension-1;
@@ -1099,11 +1107,16 @@ __device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) c
 	// planePos.e[dimension] = n->p;
 	// planePos = n->median;
 	float denom = dot(r.direction(), planeNormal);
+	// vec3 d = planeNormal * dot((r.origin() - n->median), planeNormal)/planeNormal.squared_length();
+	// vec3 proj_dir_d = dot(r.direction(), d)*d/d.squared_length();
+	// if (threadIdx.x == 0) printf("%d: %f %f %f, %f %f %f, %f %f %f\n", n->dim, r.origin().x(), r.origin().y(), r.origin().z(), n->median.x(), n->median.y(), n->median.z(), planeNormal.x(), planeNormal.y(), planeNormal.z());
 	// printf("%f\n", denom);
 	if(abs(denom) < 0.0001f)
 		return false;
-	vec3 vAdjusted = r.direction()*-dot((n->median - r.origin()), planeNormal)/denom;
-	poi = r.origin() + vAdjusted;
+	vec3 vAdjusted = r.direction()*(-dot((n->median - r.origin()), planeNormal)/denom);
+	poi = r.origin() - vAdjusted;
+	// if (threadIdx.x == 0) printf("%d: %f %f %f, %f %f %f, %f %f %f\n", n->dim, r.origin().x(), r.origin().y(), r.origin().z(), n->median.x(), n->median.y(), n->median.z(), planeNormal.x(), planeNormal.y(), planeNormal.z());
+	// poi = r.origin() + proj_dir_d;
 	// if(threadIdx.x == 0){
 		// printf("%f %f %f\n", poi.x(), poi.y(), poi.z());
 		// printf("%d %d\n", n->dim, dimension);
