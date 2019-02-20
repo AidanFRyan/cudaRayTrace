@@ -971,13 +971,9 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	median = in->median;
 	p = median[dim];	//note that this is mean value, may have to use median (probably won't matter)
 	obj = in;
-	// printf("%p\n", obj->mat);
-	// median = vec3((max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2);
 }
 __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
-	// bool temp = false;
 	if(obj != nullptr){
-		// printf("%p %p %p %p %p\n", obj, &r, &tmin, &tmax, &rec);
 		return obj->hit(r, tmin, tmax, rec);
 	}
 	return false;
@@ -995,13 +991,17 @@ __device__ TriTree::TriTree(){
 	numNodes = 0;
 	head = nullptr;
 }
-__device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (maybe precompute median on host side as part of Face)
-	TreeNode* cur = head, *prev = nullptr;	//bounding volume might make this more efficient for both insertion and hit search
+__device__ void TriTree::insert(Face* in){ //TODO: Need to preprocess total triangles, create bounding box at each node level and split, then create leaf nodes. This takes care of order of insertion problem	
+	TreeNode* cur = head, *prev = nullptr;
 	numNodes++;
-	int i = 0;
-	// float med[3] = {(in->verts[0].x()+in->verts[1].x()+in->verts[2].x())/3, (in->verts[0].y()+in->verts[1].y()+in->verts[2].y())/3, (in->verts[0].z()+in->verts[1].z()+in->verts[2].z())/3};
 	while(cur != nullptr){
 		cur->median = (cur->median+in->median)/2;
+		for(int i = 0; i < 3; i++){
+			if(in->max[i] > cur->max[i])
+				cur->max[i] = in->max[i];
+			if(in->min[i] < cur->min[i])
+				cur->min[i] = in->min[i];
+		}
 		if(in->median.e[cur->dim] < cur->p){
 			prev = cur;
 			cur = cur->l;
@@ -1009,8 +1009,6 @@ __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (ma
 				prev->l = new TreeNode(in, prev);
 				break;
 			}
-			// else 
-
 		}
 		else{
 			prev = cur;
@@ -1019,9 +1017,7 @@ __device__ void TriTree::insert(Face* in){ 	//TODO: make this more efficient (ma
 				prev->r = new TreeNode(in, prev);
 				break;
 			}
-			// else cur->median = (cur->median+in->median)/2;
 		}
-		i++;
 	}
 	if(head == nullptr){
 		head = new TreeNode(in, nullptr);
@@ -1048,15 +1044,10 @@ __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_r
 				}
 			}
 			if(position[stackSize-1] = positionOnPlane(r, cur, pos)){//if intersection, pursue right or left path
-				// if (threadIdx.x == 0) printf("%f < %f?\n", pos.e[cur->dim], cur->p);
 				if(pos.e[cur->dim] < cur->p){
-					// if(threadIdx.x == 0)
-					// 	printf("%p Left %p\n", cur, cur->l);
 					cur = cur->l;
 				}
 				else {
-					// if(threadIdx.x == 0)
-					// 	printf("%p Right %p\n", cur, cur->r);
 					cur = cur->r;
 				}
 			}
@@ -1076,7 +1067,6 @@ __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_r
 }
 
 __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
-	// printf("called face hit\n");
 	vec3 one = vec3(1,1,1);
 	for(int i = 0; i < 3; i++){
 		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
@@ -1084,53 +1074,32 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
 		if(i == 2)
 			return false;
 	}
-	// printf("%p\n", &r.B.e[0]);
 	float NdotDir = dot(surfNorm, r.direction());
 	if(abs(NdotDir) < .001){
-		// printf("parallel\n");
 		return false;
 	}
 	float D = dot(surfNorm, verts[0]);
 	
 	float temp = -((dot(surfNorm, r.origin())-D)/NdotDir);
-	// printf("%f\n", temp);
     vec3 p = (r.origin())+temp*(r.direction());
-    // vec3 e[3];
     vec3 diff[3];
     
     diff[0] = p - verts[0];
     diff[1] = p - verts[1];
 	diff[2] = p - verts[2];
-	// e[0] = verts[1] - verts[0];
-    // e[1] = verts[2] - verts[1];
-    // e[2] = verts[0] - verts[2];
-	// printf("%f %f %f\n", e[0].x(), e[1].x(), e[2].x());
-	// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
-	// if(p.length() < t_max)
-		// printf("checking hit %f\n", temp);
-	// else printf("t_max: %f\n", t_max);
-	// printf("verts:\n%f %f %f\n%f %f %f\n%f %f %f\np:\n%f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z());
 
 	for(int i = 0; i < 3; i++){
-		// printf("%f\n",dot(surfNorm, cross(e[i], diff[i])));
         if(dot(surfNorm, cross(e[i], diff[i])) < 0){
 			return false;
 		}
 	}
-	// printf("ray is inside a triangle!\n");
-	// printf("D: %f\nverts:\n%f %f %f\n%f %f %f\n%f %f %f\np: %f %f %f\nr.origin: %f %f %f\nr.direction: %f %f %f\n", D, verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z(), p.x(), p.y(), p.z(), r.origin().x(), r.origin().y(), r.origin().z(), r.direction().x(), r.direction().y(), r.direction().z());
 
     if(temp < t_max && temp > t_min){
 		t_max = temp;
 		rec.mat = mat;
-		// printf("mat: %p %p\n", mat, &mat->emitter);
 		rec.t = temp;
 		rec.p = p;
 		rec.normal = surfNorm;
-		// printf("%f %f %f vs %f %f %f\n", surfNorm.x(), surfNorm.y(), surfNorm.z(), p.x(), p.y(), p.z());
-		// printf("%f %f %f %f %f %f\n", r.A.x(), r.A.y(), r.A.z(), r.B.x(), r.B.y(), r.B.z());
-		// printf("r.B: %f %f %f\n", r.B.x(), r.B.y(), r.B.z());
-		// printf("p: %f %f %f\nv1: %f %f %f\nv2: %f %f %f\nv3: %f %f %f\n", p.x(), p.y(), p.z(), verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
         return true;
     }
     return false;
@@ -1139,26 +1108,15 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
 __device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const {	//TODO: fix error where half the triangles don't render at all (has to do with left/right in plane for each tri)
 	vec3 planeNormal;//, planePos;
 	int dimension = n->dim;
-	// printf("n->dim %d\n", n->dim);
 	dimension = dimension == 0 ? 2 : dimension-1;
 	planeNormal.e[dimension] = 1;
-	// planePos.e[dimension] = n->p;
-	// planePos = n->median;
 	float denom = dot(r.direction(), planeNormal);
-	// vec3 d = planeNormal * dot((r.origin() - n->median), planeNormal)/planeNormal.squared_length();
-	// vec3 proj_dir_d = dot(r.direction(), d)*d/d.squared_length();
-	// if (threadIdx.x == 0) printf("%d: %f %f %f, %f %f %f, %f %f %f\n", n->dim, r.origin().x(), r.origin().y(), r.origin().z(), n->median.x(), n->median.y(), n->median.z(), planeNormal.x(), planeNormal.y(), planeNormal.z());
-	// printf("%f\n", denom);
+
 	if(abs(denom) < 0.0001f)
 		return false;
+
 	vec3 vAdjusted = r.direction()*(-dot((n->median - r.origin()), planeNormal)/denom);
 	poi = r.origin() - vAdjusted;
-	// if (threadIdx.x == 0) printf("%d: %f %f %f, %f %f %f, %f %f %f\n", n->dim, r.origin().x(), r.origin().y(), r.origin().z(), n->median.x(), n->median.y(), n->median.z(), planeNormal.x(), planeNormal.y(), planeNormal.z());
-	// poi = r.origin() + proj_dir_d;
-	// if(threadIdx.x == 0){
-		// printf("%f %f %f\n", poi.x(), poi.y(), poi.z());
-		// printf("%d %d\n", n->dim, dimension);
-	// }
 	return true;
 }
 
