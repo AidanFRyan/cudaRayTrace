@@ -120,6 +120,7 @@ public:
 };
 
 class OBJ;
+class TriTree;
 class hitable_list{
 public:
 	__host__ __device__ hitable_list();
@@ -129,6 +130,7 @@ public:
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec, int index);
 	__device__ hitable_list(OBJ **list, int n, int additional);
 	void copyDevice();
+	__device__ TriTree* toTree();
 
 	hitable **list, **d_list;
 	hitable_list* d_world;
@@ -244,6 +246,7 @@ public:
     OBJ* copyToDevice();
     __device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 // private:
+    __device__ TriTree* toTree();
     ifstream file, mtllib;
     vec3 *points, *text, *normals;
     int numP, numT, numN, PBuf, TBuf, NBuf;
@@ -257,6 +260,7 @@ public:
 // class TriTree;
 class TreeNode : public hitable{
 	friend class TriTree;
+	friend class OBJ;
 public:
 	TreeNode *r, *l, *parent;
 	__host__ __device__ TreeNode();
@@ -265,7 +269,8 @@ public:
 	__device__ bool withinBB(const vec3& p);
 	// __device__ void insert(Face* in);
 private:
-	Face* obj;
+	Face* obj, **contained;
+	int within;
 	float max[3], min[3], p;
 	short dim;
 	vec3 median;
@@ -273,11 +278,13 @@ private:
 };
 
 class TriTree : public hitable{
+	friend class OBJ;
 public:
 	__host__ __device__ TriTree();
 	__host__ __device__ void insert(Face* in);
 	__device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 	hitable* copyToDevice();
+	__device__ void print();
 private:
 	__device__ bool positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const;
 	int numNodes;

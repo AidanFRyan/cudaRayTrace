@@ -446,11 +446,44 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 	e[0] = verts[1] - verts[0];
     e[1] = verts[2] - verts[1];
     e[2] = verts[0] - verts[2];
-    median.set((v1.x()+v2.x()+v3.x())/3, (v1.y()+v2.y()+v3.y())/3, (v1.z()+v2.z()+v3.z())/3);
-    for(int i =0; i < 2; i++){
+    // median.set((v1.x()+v2.x()+v3.x())/3, (v1.y()+v2.y()+v3.y())/3, (v1.z()+v2.z()+v3.z())/3);
+    float x[3], y[3], z[3];
+   
+	x[0] = v1.x();
+	y[0] = v1.y();
+	z[0] = v1.z();
+	x[1] = v2.x();
+	y[1] = v2.y();
+	z[1] = v2.z();
+	x[2] = v3.x();
+	y[2] = v3.y();
+	z[2] = v3.z();
+
+	for(int i = 0; i < 2; i++){
+		for(int j = i; j < 3; j++){
+			if(x[i] > x[j]){
+				float temp = x[i];
+				x[i] = x[j];
+				x[j] = temp;
+			}
+			if(y[i] > y[j]){
+				float temp = y[i];
+				y[i] = y[j];
+				y[j] = temp;
+			}
+			if(z[i] > z[j]){
+				float temp = z[i];
+				z[i] = z[j];
+				z[j] = temp;
+			}
+		}
+	}
+	median.set(x[1], y[1], z[1]);
+
+    for(int i =0; i < 3; i++){
 		max[i] = FLT_MIN;
 		min[i] = FLT_MAX;
-		for(int j = 0; j < 2; j++){
+		for(int j = 0; j < 3; j++){
 			if(verts[j].e[i] > max[i])
 				max[i] = verts[j].e[i];
 			if(verts[j].e[i] < min[i])
@@ -732,7 +765,8 @@ void OBJ::parse(char* line){
     }
     else if(newFace){
 		// printf("%d: %f %f %f\n", set[0], points[set[0]].x(), points[set[0]].y(), points[set[0]].z());
-        append(Face(points[set[0]], points[set[3]], points[set[6]], text[set[1]], text[set[4]], text[set[7]], normals[set[2]], normals[set[5]], normals[set[8]]));
+        // append(Face(points[set[0]], points[set[3]], points[set[6]], text[set[1]], text[set[4]], text[set[7]], normals[set[2]], normals[set[5]], normals[set[8]]));
+        append(Face(points[set[0]], points[set[3]], points[set[6]], vec3(), vec3(), vec3(), vec3(), vec3(), vec3()));
 		// exit(0);
 	}
 }
@@ -783,6 +817,12 @@ __host__ __device__ Face::Face(){
 	e[2] = vec3();
 	median = vec3();
 	mat = nullptr;
+	min[0] = 0;
+	min[1] = 0;
+	min[2] = 0;
+	max[0] = 0;
+	max[1] = 0;
+	max[2] = 0;
 }
 
 
@@ -950,6 +990,14 @@ __device__ TreeNode::TreeNode(){
 	dim = 0;
 	r = nullptr;
 	l = nullptr;
+	within = 0;
+	contained = nullptr;
+	min[0] = FLT_MAX;
+	min[1] = FLT_MAX;
+	min[2] = FLT_MAX;
+	max[0] = FLT_MIN;
+	max[1] = FLT_MIN;
+	max[2] = FLT_MIN;
 }
 __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	// printf("inserted\n");
@@ -962,6 +1010,8 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	max[0] = in->max[0];
 	max[1] = in->max[1];
 	max[2] = in->max[2];
+	within = 0;
+	contained = nullptr;
 	// surfNorm.make_uni
 	if(par != nullptr)
 		dim = parent->dim<2 ? par->dim+1 : 0;
@@ -995,15 +1045,17 @@ __device__ void TriTree::insert(Face* in){ //TODO: Need to preprocess total tria
 	TreeNode* cur = head, *prev = nullptr;
 	numNodes++;
 	while(cur != nullptr){
-		cur->median = (cur->median+in->median)/2;
+		cur->within = 0;
+		// cur->medSum += in->median;
+		// cur->median = cur->medSum/cur->within;
 		for(int i = 0; i < 3; i++){
 			if(in->max[i] > cur->max[i])
 				cur->max[i] = in->max[i];
 			if(in->min[i] < cur->min[i])
 				cur->min[i] = in->min[i];
 		}
+		prev = cur;
 		if(in->median.e[cur->dim] < cur->p){
-			prev = cur;
 			cur = cur->l;
 			if(cur == nullptr){
 				prev->l = new TreeNode(in, prev);
@@ -1011,7 +1063,6 @@ __device__ void TriTree::insert(Face* in){ //TODO: Need to preprocess total tria
 			}
 		}
 		else{
-			prev = cur;
 			cur = cur->r;
 			if(cur == nullptr){
 				prev->r = new TreeNode(in, prev);
@@ -1024,47 +1075,7 @@ __device__ void TriTree::insert(Face* in){ //TODO: Need to preprocess total tria
 	}
 }
 
-__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//Need to fix math/logic error in positionOnPlane
-	TreeNode* cur = head;//, *t = nullptr;
-	TreeNode** stack = new TreeNode*[numNodes];
-	int stackSize = 0;
-	bool anyhit = false;
-	vec3 pos;
-	hit_record temprec;
-	float closest = tmax;
-	bool *position = new bool[numNodes];
-	do{
-		while(cur != nullptr){
-			stack[stackSize++] = cur;
-			if(cur->hit(r, tmin, closest, temprec)){
-				if(closest < tmax){
-					rec = temprec;
-					tmax = closest;
-					anyhit = true;
-				}
-			}
-			if(position[stackSize-1] = positionOnPlane(r, cur, pos)){//if intersection, pursue right or left path
-				if(pos.e[cur->dim] < cur->p){
-					cur = cur->l;
-				}
-				else {
-					cur = cur->r;
-				}
-			}
-			else cur = cur->l;
-		}
-		while(stackSize > 0 && (position[stackSize-1] || stack[stackSize-1]->r == nullptr)){
-			stackSize--;
-		}
-		if(stackSize > 0){
-			cur = stack[stackSize-1]->r;
-			stackSize--;
-		}
-	}	while(stackSize > 0);
-	delete[] stack;
-	delete[] position;
-	return anyhit;
-}
+
 
 __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
 	vec3 one = vec3(1,1,1);
@@ -1118,6 +1129,274 @@ __device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) c
 	vec3 vAdjusted = r.direction()*(-dot((n->median - r.origin()), planeNormal)/denom);
 	poi = r.origin() - vAdjusted;
 	return true;
+}
+
+__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//Need to fix math/logic error in positionOnPlane
+	TreeNode* cur = head;//, *t = nullptr;
+	// printf("numNodes: %d\n", numNodes);
+	TreeNode** stack = new TreeNode*[numNodes];
+	int stackSize = 0;
+	bool anyhit = false;
+	vec3 pos;
+	hit_record temprec;
+	float closest = tmax;
+	bool *position = new bool[numNodes];
+	do{
+		while(cur != nullptr){
+			stack[stackSize++] = cur;
+			if(position[stackSize-1] = positionOnPlane(r, cur, pos)){
+				if(cur->l == nullptr && cur->r == nullptr){
+					// printf("within: %d\n", cur->within);
+					for(int i = 0; i < cur->within; i++){
+						if(cur->contained[i]->hit(r, tmin, closest, temprec)){
+							if(closest < tmax){
+								rec = temprec;
+								tmax = closest;
+								anyhit = true;
+							}
+						}
+					}
+				}
+				if(pos.e[cur->dim] < cur->median[cur->dim]){
+					cur = cur->l;
+				}
+				else if(pos.e[cur->dim] >= cur->median[cur->dim]){
+					cur = cur->r;
+				}
+			}
+			else{
+				cur = cur->l;
+			}
+		}
+		while(stackSize > 0 && (position[stackSize-1] || stack[stackSize-1]->r == nullptr)){
+			stackSize--;
+		}
+		if(stackSize > 0){
+			cur = stack[stackSize-1]->r;
+			stackSize--;
+		}
+	}	while(stackSize > 0);
+	delete[] stack;
+	delete[] position;
+	return anyhit;
+}
+
+__device__ void sortInsertion(int max, float* mx, float* my, float* mz, const vec3& med){
+	const float *median = med.e;
+
+	for(int i = 0; i <= max; i++){
+		if(i == max){
+			mx[i] = median[0];
+		}
+		else{
+			if(median[0] < mx[i]){
+				for(int r = max; r > i; r--){
+					mx[r] = mx[r-1];
+				}
+				mx[i] = median[0];
+				break;
+			}
+		}
+	}
+	for(int i = 0; i <= max; i++){
+		if(i == max){
+			my[i] = median[1];
+		}
+		else{
+			if(median[1] < my[i]){
+				for(int r = max; r > i; r--){
+					mx[r] = my[r-1];
+				}
+				my[i] = median[1];
+				break;
+			}
+		}
+	}
+	for(int i = 0; i <= max; i++){
+		if(i == max){
+			mz[i] = median[2];
+		}
+		else{
+			if(median[2] < mz[i]){
+				for(int r = max; r > i; r--){
+					mz[r] = mz[r-1];
+				}
+				mz[i] = median[2];
+				break;
+			}
+		}
+	}
+}
+
+__device__ TriTree* OBJ::toTree(){
+	int list_size = numFaces;
+	TreeNode** stack = new TreeNode*[list_size];
+	unsigned int stackSize = 0, maxSize = 0;
+	stack[stackSize++] = new TreeNode;
+	stack[stackSize-1]->contained = new Face*[list_size];
+	float *mx = new float[list_size], *my = new float[list_size], *mz = new float[list_size];
+	
+	for(int i = 0; i < list_size; i++){
+		// stack[stackSize-1]->contained[i] = new Face(object[i], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
+		stack[stackSize-1]->contained[i] = new Face(object[i], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
+
+		sortInsertion(i, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+	}
+
+	if(list_size % 2 != 0){
+		stack[stackSize-1]->median.set(mx[list_size/2], my[list_size/2], mz[list_size/2]);
+	}
+	else{
+		stack[stackSize-1]->median.set((mx[list_size/2]+mx[list_size/2-1])/2, (my[list_size/2]+my[list_size/2-1])/2, (mz[list_size/2]+mz[list_size/2-1])/2);
+	}
+
+	stack[stackSize-1]->within = list_size;
+	stack[stackSize-1]->p = stack[stackSize-1]->median[stack[stackSize-1]->dim];
+	
+	while(stackSize > 0){
+		while(stack[stackSize-1]->within > 1 && stack[stackSize-1]->l == nullptr){
+			short d = stack[stackSize-1]->dim;
+			Face** t = new Face*[stack[stackSize-1]->within];
+			int s = 0;
+			TreeNode* temp = new TreeNode();
+			for(int i = 0; i < stack[stackSize-1]->within; i++){
+				if(stack[stackSize-1]->contained[i]->median.e[d] < stack[stackSize-1]->median.e[d]){
+					t[s] = stack[stackSize-1]->contained[i];
+					sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+					for(int j = 0; j < 3; j++){
+						if(t[s]->max[j] > temp->max[j])
+							temp->max[j] = t[s]->max[j];
+						if(t[s]->min[j] < temp->min[j])
+							temp->min[j] = t[s]->min[j];
+					}
+					s++;
+				}
+			}
+			Face** tt = new Face*[s];
+			for(int i = 0; i < s; i++){
+				tt[i] = t[i];
+			}
+			delete[] t;
+			if(s > 0){
+				temp->dim = d==2?0:d+1;
+				if(s % 2 != 0){
+					temp->median.set(mx[s/2], my[s/2], mz[s/2]);
+				}
+				else{
+					temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
+				}
+				temp->contained = tt;
+				temp->parent = stack[stackSize-1];
+				temp->within = s;
+				temp->p = temp->median.e[temp->dim];
+				stack[stackSize-1]->l = temp;
+				if(stackSize < list_size-1){
+					stack[stackSize++] = temp;
+					maxSize++;
+					if(stackSize > 3 && s == stack[stackSize-1]->parent->parent->parent->within){
+						stackSize-=3;
+						break;
+					}
+					if(s == 1)
+						stack[stackSize-1]->obj = stack[stackSize-1]->contained[0];
+				}
+				else{
+					stackSize--;
+					break;
+				}
+			}
+			else{
+				break;
+			}
+			// printf("%d\n", maxSize);
+		}
+		if(stack[stackSize-1]->within > 1 && stack[stackSize-1]->r == nullptr){
+			short d = stack[stackSize-1]->dim;
+			Face** t = new Face*[stack[stackSize-1]->within];
+			int s = 0;
+			// vec3 m;
+			TreeNode* temp = new TreeNode();
+			// vec3 curMed = stack[stackSize-1]->median;
+			for(int i = 0; i < stack[stackSize-1]->within; i++){
+				if(stack[stackSize-1]->contained[i]->median.e[d] >= stack[stackSize-1]->median.e[d]){
+					t[s] = stack[stackSize-1]->contained[i];
+					sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+					for(int j = 0; j < 3; j++){
+						if(t[s]->max[j] > temp->max[j])
+							temp->max[j] = t[s]->max[j];
+						if(t[s]->min[j] < temp->min[j])
+							temp->min[j] = t[s]->min[j];
+					}
+					s++;
+				}
+			}
+			Face** tt = new Face*[s];
+			for(int i = 0; i < s; i++){
+				tt[i] = t[i];
+			}
+			delete[] t;
+			if(s > 0){
+				temp->dim = d==2?0:d+1;
+				if(s % 2 != 0){
+					temp->median.set(mx[s/2], my[s/2], mz[s/2]);
+				}
+				else{
+					temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
+				}
+				temp->contained = tt;
+				temp->parent = stack[stackSize-1];
+				temp->within = s;
+				temp->p = temp->median.e[temp->dim];
+				stack[stackSize-1]->r = temp;
+				if(stackSize < list_size-1){
+					stack[stackSize++] = temp;
+					maxSize++;
+					if(stackSize > 3 && s == stack[stackSize-1]->parent->parent->parent->within){
+						stackSize-=3;
+						continue;
+					}
+					if(s == 1)
+						stack[stackSize-1]->obj = stack[stackSize-1]->contained[0];
+				}
+				else stackSize--;
+				
+			}
+			else stackSize--;
+		}
+		else stackSize--;
+		// printf("%d\n", maxSize);
+	}
+
+	TriTree* tree = new TriTree;
+	tree->head = stack[0];
+	tree->numNodes = maxSize;
+	return tree;
+}
+
+__device__ void TriTree::print(){
+	TreeNode* cur = head;//, *t = nullptr;
+	printf("numNodes: %d\n", numNodes);
+	TreeNode** stack = new TreeNode*[numNodes];
+	int stackSize = 0;
+	do{
+		while(cur != nullptr){
+			stack[stackSize++] = cur;
+			if(cur->r == nullptr && cur->l == nullptr){
+				printf("%p %f %f %f %d\n", cur, cur->median.x(), cur->median.y(), cur->median.z(), cur->within);
+				break;
+			}
+			printf("%p %p %p\n", cur, cur->l, cur->r);
+			cur = cur->l;
+		}
+		while(stackSize > 0 && stack[stackSize-1]->r == nullptr){
+			stackSize--;
+		}
+		if(stackSize > 0){
+			cur = stack[stackSize-1]->r;
+			stackSize--;
+		}
+	}	while(stackSize > 0);
+	delete[] stack;
 }
 
 // hitable* TriTree::copyToDevice(){

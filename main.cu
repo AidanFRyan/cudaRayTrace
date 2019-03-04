@@ -36,20 +36,26 @@ __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, 
 		// printf("numObjs: %d\n", numOBJs);
 		
 		// *world = new hitable_list(objs, numOBJs, wSize);
-		TriTree* t = new TriTree();
+		// TriTree* t = new TriTree();
 		*world = new hitable_list(wSize+1);
 		// (*world)->list[0] = new TriTree();
 		// printf("%d\n", (*world)->list_size);
 		// printf("%d\n", numOBJs);
+		printf("launching toTree\n");
 		for(int i = 0; i < numOBJs; i++){
-			for(int j =0; j < objs[i]->numFaces; j++){
-				// printf("inserting\n");
-				if(j % 1000 == 0)
-					printf("%d / %d\n", j, objs[i]->numFaces);
-				t->insert(new Face(objs[i]->object[j], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f))));
-			}
-		}	
-		(*world)->list[0] = t;
+			// for(int j =0; j < objs[i]->numFaces; j++){
+			// 	// printf("inserting\n");
+			// 	if(j % 1000 == 0)
+			// 		printf("%d / %d\n", j, objs[i]->numFaces);
+			// 	t->insert(new Face(objs[i]->object[j], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f))));
+			// }
+
+			// printf("%p\n", objs[i]->object[0]);
+			// printf("Trying to launch\n");
+			TriTree *tt = objs[i]->toTree();
+			(*world)->list[i] = tt;
+			// tt->print();
+		}
 	// }
 	// __syncthreads();
 	// int curIndex = index*cluster;
@@ -476,10 +482,12 @@ int main(int argc, char* argv[]){
 	world = new hitable_list**[count];
 
 	int numBlocks = 1, numThreads = 512;
-	// int x = 1920;
-	// int y = 1080;
-	int x = 400;
-	int y = 200;
+	
+	int x = 200;
+	int y = 100;
+
+	x = 1000;
+	y = 500;
 	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
@@ -496,11 +504,11 @@ int main(int argc, char* argv[]){
 	int numObjs = worldSize;
 	for(int i = 0; i < numOBJs; i++){
 		objs[i] = new OBJ(argv[i+1]);
-		totalSize += objs[i]->numFaces*sizeof(TreeNode) + numBlocks*numThreads*objs[i]->numFaces*sizeof(TreeNode*) + numBlocks*numThreads*objs[i]->numFaces*sizeof(bool) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3) + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
+		totalSize += objs[i]->numFaces*sizeof(TreeNode) + objs[i]->numFaces*objs[i]->numFaces*sizeof(Face*) + objs[i]->numFaces*sizeof(TreeNode*) + numBlocks*numThreads*objs[i]->numFaces*sizeof(TreeNode*) + numBlocks*numThreads*objs[i]->numFaces*sizeof(bool) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3) + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
 		numObjs += objs[i]->numFaces;
 	}
 	// numObjs+=worldSize;
-	totalSize*=4;
+	// totalSize*=4;
 	// totalSize += 512*2000*sizeof(bool);
 	// totalSize += 512*1000*sizeof(TreeNode*);
 	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
