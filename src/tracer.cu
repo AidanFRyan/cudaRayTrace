@@ -4,7 +4,7 @@
 #include <typeinfo>
 
 //begin Peter Shirley's book code
-//asdfasdfasdf
+
 vec3::vec3(){
 	e[0] = 0;
 	e[1] = 0;
