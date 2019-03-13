@@ -1,4 +1,6 @@
-main:
-	(cd src; make main)
-debug:
-	(cd src; make debug)
+#Aidan Ryan, 2019
+
+default:
+	make -C src main
+dbg:
+	make -C src debug

@@ -1,3 +1,5 @@
+#Aidan Ryan, 2019
+
 main: main.o tracer.o
 	nvcc -Xcompiler "-fopenmp" -rdc=true -lIlmImf -arch=sm_61 main.o tracer.o -o main
 	mv main ..
