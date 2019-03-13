@@ -1,5 +1,9 @@
+//Aidan Ryan, 2019
+
 #include "tracer.h"
 #include <typeinfo>
+
+//begin Peter Shirley's book code
 
 vec3::vec3(){
 	e[0] = 0;
@@ -260,41 +264,17 @@ __global__ void listHits(int n, int cluster, bool* anyHits, const ray* r, hitabl
 		*finished = true;
 	}
 }
-// hitable** hitable_list::listPointer(){
-// 	return d_list;
-// }
-__device__ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec){//}, bool* d_hits, hit_record* d_recs, float* d_dmax) const{
+__device__ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec){
 	hit_record temp_rec;
 	bool anyHits = false;
-	// bool* finished = new bool;
-	// *finished = false;
 	float closest = tmax;
-	// bool* d_hits = new bool[list_size];
-	// hit_record* d_recs = new hit_record[list_size];
-	// float* d_dmax = new float[list_size];
-	// printf("%p, %d\n", this, this->list_size);
-	// listHits<<<1, 256>>>(list_size, 1, d_hits, &r, list, d_recs, d_dmax, tmin, tmax, finished);
-	// cudaDeviceSynchronize();
-	// while(!finished);
-	// rec = d_recs[0];
-	// anyHits = d_hits[0];
-
 	for(int i = 0; i < list_size; i++){
-		// printf("%d %d\n", i, list_size);
-		// printf("%d %d\n", list_size, i);
-		// printf("hh: %d %p %p %p %p\n", i, &r, &tmin, &closest, &temp_rec);
 		if(list[i]->hit(r, tmin, closest, temp_rec)){
-			// printf("%f, %f, %f\n", r.direction().x(), r.direction().y(), r.direction().z());
 			anyHits = true;
 			closest = temp_rec.t;
 			rec = temp_rec;
-			// if(temp_rec.mat)
-			// break;
 		}
 	}
-	// delete[] d_hits;
-	// delete[] d_recs;
-	// delete[] d_dmax;
 	return anyHits;
 }
 
@@ -345,9 +325,9 @@ __device__ bool hitable_list::hit(const ray& r, const float& tmin, float& tmax, 
 // 	cudaDeviceSynchronize();
 // 	list = copy;
 // }
-__device__ vec3 random_in_unit_disk(curandState* state){
-	// curandState state;
-	// curand_init(1234, threadIdx.x+blockDim.x*blockIdx.x, 0, &state);
+
+
+__device__ vec3 random_in_unit_disk(curandState* state){	//Device Version
 	vec3 p;
 	do{
 		p = 2.0f*vec3(curand_uniform(state), curand_uniform(state), 0) - vec3(1,1,0);
@@ -355,16 +335,12 @@ __device__ vec3 random_in_unit_disk(curandState* state){
 	return p;
 }
 
-vec3 random_in_unit_disk(mt19937 state){
-	// curandState state;
-	// curand_init(1234, threadIdx.x+blockDim.x*blockIdx.x, 0, &state);
+vec3 random_in_unit_disk(mt19937 state){	//Host version (For Xeon Phi development)
 	uniform_real_distribution<>dis(0,1);
-	// printf("%f\n", state);
 	vec3 p;
 	do{
 		p = 2.0f*vec3(dis(state), dis(state), 0) - vec3(1,1,0);
 	}while(dot(p,p) >= 1.0f);
-	// printf("exiting riud\n");
 	return p;
 }
 
@@ -399,7 +375,7 @@ camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect){
 	horizontal = 2*halfWidth*u;
 	vertical = 2*halfHeight*v;
 }
-camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float aperture, float focus_dist){
+camera::camera(vec3 o, vec3 lookAt, vec3 vup, float vfov, float aspect, float aperture, float focus_dist){	//camera with focus perspective, from 
 	// vec3 u, v, w;
 	lens_radius = aperture/2;
 	vfov *= CUDA_PI/180;
@@ -423,6 +399,8 @@ __device__ void camera::get_ray(const float& s, const float& t, ray& r, curandSt
 	r = ray(origin + offset, ulc+s*horizontal-t*vertical-origin-offset);
 }
 
+
+
 void camera::get_ray(const float& s, const float& t, ray& r, mt19937 state){
 	vec3 rd;
 	if(lens_radius > 0.001)
@@ -432,7 +410,9 @@ void camera::get_ray(const float& s, const float& t, ray& r, mt19937 state){
 	r = ray(origin + offset, ulc+s*horizontal-t*vertical-origin-offset);
 }
 
-__host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3){
+//end adaption of Shirley's code
+
+__host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3 t3, vec3 n1, vec3 n2, vec3 n3){	//generate Face from vertex data from OBJ parser
     verts[0] = v1;
     verts[1] = v2;
     verts[2] = v3;
@@ -446,39 +426,39 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 	e[0] = verts[1] - verts[0];
     e[1] = verts[2] - verts[1];
     e[2] = verts[0] - verts[2];
-    // median.set((v1.x()+v2.x()+v3.x())/3, (v1.y()+v2.y()+v3.y())/3, (v1.z()+v2.z()+v3.z())/3);
-    float x[3], y[3], z[3];
-   
-	x[0] = v1.x();
-	y[0] = v1.y();
-	z[0] = v1.z();
-	x[1] = v2.x();
-	y[1] = v2.y();
-	z[1] = v2.z();
-	x[2] = v3.x();
-	y[2] = v3.y();
-	z[2] = v3.z();
 
-	for(int i = 0; i < 2; i++){
-		for(int j = i; j < 3; j++){
-			if(x[i] > x[j]){
-				float temp = x[i];
-				x[i] = x[j];
-				x[j] = temp;
-			}
-			if(y[i] > y[j]){
-				float temp = y[i];
-				y[i] = y[j];
-				y[j] = temp;
-			}
-			if(z[i] > z[j]){
-				float temp = z[i];
-				z[i] = z[j];
-				z[j] = temp;
-			}
-		}
-	}
-	median.set(x[1], y[1], z[1]);
+    //	for use when actual median vertex value is needed (leftover from experimentation)
+ //    float x[3], y[3], z[3];   
+	// x[0] = v1.x();
+	// y[0] = v1.y();
+	// z[0] = v1.z();
+	// x[1] = v2.x();
+	// y[1] = v2.y();
+	// z[1] = v2.z();
+	// x[2] = v3.x();
+	// y[2] = v3.y();
+	// z[2] = v3.z();
+
+	// for(int i = 0; i < 2; i++){
+	// 	for(int j = i; j < 3; j++){
+	// 		if(x[i] > x[j]){
+	// 			float temp = x[i];
+	// 			x[i] = x[j];
+	// 			x[j] = temp;
+	// 		}
+	// 		if(y[i] > y[j]){
+	// 			float temp = y[i];
+	// 			y[i] = y[j];
+	// 			y[j] = temp;
+	// 		}
+	// 		if(z[i] > z[j]){
+	// 			float temp = z[i];
+	// 			z[i] = z[j];
+	// 			z[j] = temp;
+	// 		}
+	// 	}
+	// }
+	// median.set(x[1], y[1], z[1]);
 
     for(int i =0; i < 3; i++){
 		max[i] = FLT_MIN;
@@ -490,6 +470,10 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 				min[i] = verts[j].e[i];
 		}
 	}
+
+	//using average vertex position for triangle
+	median.set((max[0] - min[0])/2, (max[1] - min[1])/2, (max[2] - min[2])/2);
+
     mat = nullptr;
 	// vec3 avgNorms = unit_vector((n1 + n2 + n3)/3);
 	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
@@ -599,41 +583,6 @@ __device__ vec3 random_in_unit_sphere(curandState* state){
 	return unit_vector(p);
 }
 
-// __device__ bool refract(const vec3&  v, const vec3& n, const float& ni_over_nt, vec3& refracted){
-// 	vec3 uv = unit_vector(v);
-// 	float dt = dot(uv, n);
-// 	float discriminant = 1.0-ni_over_nt*ni_over_nt*(1-dt*dt);
-// 	if(discriminant > 0){
-// 		refracted = ni_over_nt*(uv - n*dt) - n*sqrtf(discriminant);
-// 		return true;
-// 	}
-// 	else return false;
-// }
-
-// __device__ bool dielectric::scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered, curandState* state) const{
-// 	vec3 outward_normal;
-// 	vec3 reflected = reflect(r_in.direction(), rec.normal);
-// 	float ni_over_nt;
-// 	attenuation = vec3(1.0f, 1.0f, 1.0f);
-// 	vec3 refracted;
-// 	if(dot(r_in.direction(), rec.normal)>0){
-// 		outward_normal = -rec.normal;
-// 		ni_over_nt = ref_idx;
-// 	}
-// 	else{
-// 		outward_normal = rec.normal;
-// 		ni_over_nt = 1.0f/ref_idx;
-// 	}
-// 	if(refract(r_in.direction(), outward_normal, ni_over_nt, refracted)){
-// 		scattered = ray(rec.p, refracted);
-// 	}
-// 	else{
-// 		scattered = ray(rec.p, reflected);
-// 		return false;
-// 	}
-// 	return true;
-// }
-
 __device__ light::light(vec3 att){
 	attenuation = att;
 	emitter = true;
@@ -649,13 +598,12 @@ __device__ bool light::scatter(const ray& impacting, const hit_record& rec, vec3
 __device__ hitable_list::hitable_list(OBJ **in, int n, int additional){
 
 	list_size = 0;
-	// printf("%d\n", n);
 	for(int i = 0; i < n; i++){
-		// printf("hl i: %d\n", i);
 		list_size += in[i]->numFaces;
 	}
-	// printf("%d\n", list_size);
 	list = new hitable*[list_size+additional];
+
+	//leftover from earlier copy version, latest copies in main's worldGenerator
 	// int z = 0;
 	// for(int i = 0; i < n; i++){
 	// 	for(int j = 0; j < in[i]->numFaces; j++){
@@ -700,9 +648,7 @@ OBJ::OBJ(string fn){
 	file.close();
 }
 
-void OBJ::parse(char* line){
-	// printf(line);
-	// printf("\n");
+void OBJ::parse(char* line){	//parse obj line, determine if it's a vertex, face, or texture value
     string buf = "";
     bool pp = false, tt = false, nn = false, newFace = false;
     float vec[3] = {0,0,0};
@@ -711,7 +657,7 @@ void OBJ::parse(char* line){
     for(int i = 0; ; i++){
         if(line[i] == '#')
             break;
-        if(line[i] == ' ' || line[i] == '\t' || line[i] == '\0'){
+        if((line[i] == ' ' || line[i] == '\t' || line[i] == '\0') && !buf.empty()){
             if(!pp && !tt && !nn && !newFace && buf.compare("v") == 0){
                 pp = true;
             }
@@ -724,7 +670,7 @@ void OBJ::parse(char* line){
             else if(!newFace && buf.compare("f") == 0){
                 newFace = true;
             }
-            else if((pp || tt || nn) && index < 3){
+            else if( (pp || tt || nn) && index < 3){
                 vec[index] = stof(buf);
                 index++;
             }
@@ -734,7 +680,6 @@ void OBJ::parse(char* line){
                 for(int j = 0; j < buf.length()+1; j++){
                     if(buf[j] == '/' || buf[j] == '\0'){
 						set[index*3 + count] = stoi(petiteBuf)-1;
-						// printf("%d\n", set[index*3+count]);
 						petiteBuf = "";
                         count++;
                     }
@@ -753,21 +698,18 @@ void OBJ::parse(char* line){
     }
     if(pp){
         append(points, numP, PBuf, vec3(vec[0], vec[1], vec[2]));
-        // numP++;
     }
     else if(tt){
         append(text, numT, TBuf, vec3(vec[0], vec[1], 0.0f));
-        // numT++;
     }
     else if(nn){
         append(normals, numN, NBuf, vec3(vec[0], vec[1], vec[2]));
-        // numN++;
     }
     else if(newFace){
-		// printf("%d: %f %f %f\n", set[0], points[set[0]].x(), points[set[0]].y(), points[set[0]].z());
+
+    	// first of below is for Maya generated OBJ files, second is for Stanford dragon/bunny test files (those don't have texture or normal data included)
         // append(Face(points[set[0]], points[set[3]], points[set[6]], text[set[1]], text[set[4]], text[set[7]], normals[set[2]], normals[set[5]], normals[set[8]]));
         append(Face(points[set[0]], points[set[3]], points[set[6]], vec3(), vec3(), vec3(), vec3(), vec3(), vec3()));
-		// exit(0);
 	}
 }
 
@@ -781,7 +723,6 @@ void OBJ::append(vec3*& list, int& size, int& bufSize, const vec3& item){
 		if(size > 0)
 			delete[] list;
 		list = temp;
-		// bufSize += 1000;
 	}
 	list[size] = item;
 	size++;
@@ -793,7 +734,6 @@ void OBJ::append(const Face& item){
 		for(int i = 0; i < numFaces; i++){
 			temp[i] = object[i];
 		}
-		// faceBuffer += 1000;
 		if(numFaces > 0)
 			delete[] object;
 		object = temp;
@@ -849,6 +789,8 @@ __host__ __device__ Face& Face::operator=(const Face& in){
 	max[0] = in.max[0];
 	max[1] = in.max[1];
 	max[2] = in.max[2];
+
+	//following is for previous version that stored norm as vec3 for easier processing in Face::hit
 	// surfNorm.make_unit_vector();
 	// surfNorm = unit_vector(surfNorm);
 	// vec3 temp = unit_vector(surfNorm);
@@ -856,18 +798,11 @@ __host__ __device__ Face& Face::operator=(const Face& in){
 }
 
 OBJ* OBJ::copyToDevice(){
-	// printf("entering ctd\n");
 	gpuErrchk(cudaDeviceSynchronize());
-	// printf("synching\n");
-	// printf("%d\n", sizeof(Face));
-	// printf("%p\n", &numFaces);
-	// printf("trying to malloc %d bytes\n", (sizeof(Face))*(numFaces));
 	Face *d_faces, *oldFaces;
 	gpuErrchk(cudaMalloc((void**)&d_faces, sizeof(Face)*this->numFaces));
-	// cout<<"mallocced faces\n";
     gpuErrchk(cudaDeviceSynchronize());
 	gpuErrchk(cudaMemcpy(d_faces, object, sizeof(Face)*this->numFaces, cudaMemcpyHostToDevice));
-	// cout<<"copied faces\n";
     oldFaces = object;
     object = d_faces;
     gpuErrchk(cudaDeviceSynchronize());
@@ -950,7 +885,6 @@ __device__ sss::sss(material* surf, const float& d, const vec3& internal){
 
 __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const{
 	if(dot(unit_vector(impacting.direction()), unit_vector(rec.normal)) > 0){
-		// printf("inside out %f %f %f, %f %f %f\n", rec.p.x(), rec.p.y(), rec.p.z(), impacting.direction().x(), impacting.direction().y(), impacting.direction().z());
 		vec3 temp = impacting.direction();
 		vec3 tAtt;
 		ray tScattered;
@@ -966,18 +900,15 @@ __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& 
 		att = tAtt;
 		att /= 2;
 		return true;
-		// return surface->scatter(impacting, rec, att, scattered, state);
 	}
 	else if(curand_uniform(state) > 0.5f){//determines if reflecting off surface
 		return surface->scatter(impacting, rec, att, scattered, state);
 	}
 	else{//or going inside
-		// vec3 internalTarget = (dot(rec.p, -rec.normal)/rec.normal.length()) * unit_vector(-rec.normal);
 		vec3 temp = impacting.direction();
 		do{
 			temp = random_in_unit_sphere(state);
 		}	while(dot(temp, rec.normal) >= 0);
-		// printf("%f %f %f, %f %f %f\n", rec.normal.x(), rec.normal.y(), rec.normal.z(), temp.x(), temp.y(), temp.z());
 		scattered = ray(rec.p, impacting.direction() + temp);
 		att = attenuation;
 		return true;
@@ -999,9 +930,8 @@ __device__ TreeNode::TreeNode(){
 	max[1] = FLT_MIN;
 	max[2] = FLT_MIN;
 }
+
 __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
-	// printf("inserted\n");
-	// obj = nullptr;
 	l = r = nullptr;
 	parent = par;
 	min[0] = in->min[0];
@@ -1012,7 +942,6 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	max[2] = in->max[2];
 	within = 0;
 	contained = nullptr;
-	// surfNorm.make_uni
 	if(par != nullptr)
 		dim = parent->dim<2 ? par->dim+1 : 0;
 	else{
@@ -1022,6 +951,7 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	p = median[dim];	//note that this is mean value, may have to use median (probably won't matter)
 	obj = in;
 }
+
 __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
 	if(obj != nullptr){
 		return obj->hit(r, tmin, tmax, rec);
@@ -1041,13 +971,12 @@ __device__ TriTree::TriTree(){
 	numNodes = 0;
 	head = nullptr;
 }
-__device__ void TriTree::insert(Face* in){ //TODO: Need to preprocess total triangles, create bounding box at each node level and split, then create leaf nodes. This takes care of order of insertion problem	
+
+__device__ void TriTree::insert(Face* in){ //insert node in tree based on location of tri. Doesn't function properly, will remove when finished with KD
 	TreeNode* cur = head, *prev = nullptr;
 	numNodes++;
 	while(cur != nullptr){
 		cur->within = 0;
-		// cur->medSum += in->median;
-		// cur->median = cur->medSum/cur->within;
 		for(int i = 0; i < 3; i++){
 			if(in->max[i] > cur->max[i])
 				cur->max[i] = in->max[i];
@@ -1075,9 +1004,7 @@ __device__ void TriTree::insert(Face* in){ //TODO: Need to preprocess total tria
 	}
 }
 
-
-
-__device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{//need to store non-ray derived values to reduce comp time
+__device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{	//check ray intersection with triangle. Basic math from scratchapixel
 	vec3 one = vec3(1,1,1);
 	for(int i = 0; i < 3; i++){
 		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
@@ -1116,74 +1043,79 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
     return false;
 }
 
-__device__ bool TriTree::positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const {	//TODO: fix error where half the triangles don't render at all (has to do with left/right in plane for each tri)
-	vec3 planeNormal;//, planePos;
-	int dimension = n->dim;
-	dimension = dimension == 0 ? 2 : dimension-1;
-	planeNormal.e[dimension] = 1;
-	float denom = dot(r.direction(), planeNormal);
+__device__ bool TriTree::boxIntersect(const ray& r, TreeNode* n) const {	//check for intersection with bounding box of triangles
+	float tmax[3], tmin[3];
+	for(int i = 0; i < 3; i++){
+		tmax[i] = (n->max[i] - r.origin().e[i]) / r.direction().e[i];
+		tmin[i] = (n->min[i] - r.origin().e[i]) / r.direction().e[i];
+		if(tmax[i] < tmin[i]){
+			float t = tmax[i];
+			tmax[i] = tmin[i];
+			tmin[i] = t;
+		}
+	}
 
-	if(abs(denom) < 0.0001f)
-		return false;
-
-	vec3 vAdjusted = r.direction()*(-dot((n->median - r.origin()), planeNormal)/denom);
-	poi = r.origin() - vAdjusted;
+	for(int i = 1; i < 3; i++){
+		if(tmin[0] - tmax[i] > 0.001 || tmin[i] - tmax[0] > 0.001){
+			return false;
+		}
+		if(tmin[i] > tmin[0])
+			tmin[0] = tmin[i];
+		if(tmax[i] < tmax[0])
+			tmax[0] = tmax[i];
+	}
 	return true;
 }
 
-__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//Need to fix math/logic error in positionOnPlane
-	TreeNode* cur = head;//, *t = nullptr;
-	// printf("numNodes: %d\n", numNodes);
+//issue with recursion on GPUs, nvcc cannot compile with heap size for true recursive functions. Emulating with stack of nodes to traverse through tree with
+
+__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//issue traversing through tree on hit search, some triangles get lost when they intersect over x axis (repeated on box and to a lesser extent on teapot)
+	TreeNode* cur = head;
 	TreeNode** stack = new TreeNode*[numNodes];
 	int stackSize = 0;
 	bool anyhit = false;
-	vec3 pos;
 	hit_record temprec;
 	float closest = tmax;
-	bool *position = new bool[numNodes];
 	do{
 		while(cur != nullptr){
 			stack[stackSize++] = cur;
-			if(position[stackSize-1] = positionOnPlane(r, cur, pos)){
-				if(cur->l == nullptr && cur->r == nullptr){
-					// printf("within: %d\n", cur->within);
-					for(int i = 0; i < cur->within; i++){
-						if(cur->contained[i]->hit(r, tmin, closest, temprec)){
-							if(closest < tmax){
-								rec = temprec;
-								tmax = closest;
-								anyhit = true;
-							}
+			if(cur->l == nullptr && cur->r == nullptr){
+				for(int i = 0; i < cur->within; i++){
+					if(cur->contained[i]->hit(r, tmin, closest, temprec)){
+						if(closest < tmax){
+							rec = temprec;
+							tmax = closest;
+							anyhit = true;
 						}
 					}
 				}
-				if(pos.e[cur->dim] < cur->median[cur->dim]){
-					cur = cur->l;
-				}
-				else if(pos.e[cur->dim] >= cur->median[cur->dim]){
-					cur = cur->r;
-				}
+				break;
 			}
-			else{
-				cur = cur->l;
+			else if(cur->l != nullptr && boxIntersect(r, cur->l)){
+			 	// if(threadIdx.x == 0)printf("%d left\n", stackSize);
+			 	cur = cur->l;
+			}
+			else {
+				break;
 			}
 		}
-		while(stackSize > 0 && (position[stackSize-1] || stack[stackSize-1]->r == nullptr)){
-			stackSize--;
+		while(stackSize > 0 && (cur->r == nullptr || !boxIntersect(r, cur->r))){
+			// if(threadIdx.x==0)printf("%d back\n", stackSize);
+			cur = stack[--stackSize];
+			
 		}
-		if(stackSize > 0){
-			cur = stack[stackSize-1]->r;
-			stackSize--;
+		if(cur->r != nullptr && boxIntersect(r, cur->r)){
+			// if(threadIdx.x == 0)printf("%d right\n", stackSize);
+			cur = cur->r;
 		}
-	}	while(stackSize > 0);
+	}while(stackSize > 0);
+	// if(threadIdx.x==0)printf("done checking\n");
 	delete[] stack;
-	delete[] position;
 	return anyhit;
 }
 
-__device__ void sortInsertion(int max, float* mx, float* my, float* mz, const vec3& med){
+__device__ void sortInsertion(int max, float* mx, float* my, float* mz, const vec3& med){ //need to track indices of mx, my, mz in toTree to maintain initial sort and prevent running n^2 on tree construction
 	const float *median = med.e;
-
 	for(int i = 0; i <= max; i++){
 		if(i == max){
 			mx[i] = median[0];
@@ -1228,33 +1160,36 @@ __device__ void sortInsertion(int max, float* mx, float* my, float* mz, const ve
 	}
 }
 
-__device__ TriTree* OBJ::toTree(){
+__device__ TriTree* OBJ::toTree(){	//currently working through issue with missing tris, believe issue lies in backtracking of stack in tree construction
 	int list_size = numFaces;
 	TreeNode** stack = new TreeNode*[list_size];
-	unsigned int stackSize = 0, maxSize = 0;
+	unsigned int stackSize = 0, maxSize = 1;
 	stack[stackSize++] = new TreeNode;
 	stack[stackSize-1]->contained = new Face*[list_size];
-	float *mx = new float[list_size], *my = new float[list_size], *mz = new float[list_size];
-	
+	// float *mx = new float[list_size], *my = new float[list_size], *mz = new float[list_size];
+	// vec3 med;
 	for(int i = 0; i < list_size; i++){
-		// stack[stackSize-1]->contained[i] = new Face(object[i], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
-		stack[stackSize-1]->contained[i] = new Face(object[i], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
-
-		sortInsertion(i, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+		stack[stackSize-1]->contained[i] = new Face(object[i], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
+		// stack[stackSize-1]->contained[i] = new Face(object[i], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
+		stack[stackSize-1]->median += stack[stackSize-1]->contained[i]->median;
+		// sortInsertion(i, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+		// printf("%f %f %f\n", stack[stackSize-1]->median.x(), stack[stackSize-1]->median.y(), stack[stackSize-1]->median.z());
 	}
-
-	if(list_size % 2 != 0){
-		stack[stackSize-1]->median.set(mx[list_size/2], my[list_size/2], mz[list_size/2]);
-	}
-	else{
-		stack[stackSize-1]->median.set((mx[list_size/2]+mx[list_size/2-1])/2, (my[list_size/2]+my[list_size/2-1])/2, (mz[list_size/2]+mz[list_size/2-1])/2);
-	}
-
+	// if(list_size % 2 != 0){
+	// 	stack[stackSize-1]->median.set(mx[list_size/2], my[list_size/2], mz[list_size/2]);
+	// }
+	// else{
+	// 	stack[stackSize-1]->median.set((mx[list_size/2]+mx[list_size/2-1])/2, (my[list_size/2]+my[list_size/2-1])/2, (mz[list_size/2]+mz[list_size/2-1])/2);
+	// }
+	// printf("%f %f %f\n", stack[stackSize-1]->median.x(), stack[stackSize-1]->median.y(), stack[stackSize-1]->median.z());
+	// stack[stackSize-1]->median /= vec3(stack[stackSize-1]->max[0] + stack[stackSize-1]->min[0], stack[stackSize-1]->max[1] + stack[stackSize-1]->min[1], stack[stackSize-1]->max[2] + stack[stackSize-1]->min[2])/2;
 	stack[stackSize-1]->within = list_size;
 	stack[stackSize-1]->p = stack[stackSize-1]->median[stack[stackSize-1]->dim];
-	
+	stack[stackSize-1]->median /= list_size;
+
+	// printf("%f %f %f\n", stack[stackSize-1]->median.x(), stack[stackSize-1]->median.y(), stack[stackSize-1]->median.z());
 	while(stackSize > 0){
-		while(stack[stackSize-1]->within > 1 && stack[stackSize-1]->l == nullptr){
+		while(stack[stackSize-1]->l == nullptr){
 			short d = stack[stackSize-1]->dim;
 			Face** t = new Face*[stack[stackSize-1]->within];
 			int s = 0;
@@ -1262,7 +1197,9 @@ __device__ TriTree* OBJ::toTree(){
 			for(int i = 0; i < stack[stackSize-1]->within; i++){
 				if(stack[stackSize-1]->contained[i]->median.e[d] < stack[stackSize-1]->median.e[d]){
 					t[s] = stack[stackSize-1]->contained[i];
-					sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+					// sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+					// printf("%d l: %p\n", stackSize, t[s]);
+					temp->median += stack[stackSize-1]->contained[i]->median;
 					for(int j = 0; j < 3; j++){
 						if(t[s]->max[j] > temp->max[j])
 							temp->max[j] = t[s]->max[j];
@@ -1277,50 +1214,44 @@ __device__ TriTree* OBJ::toTree(){
 				tt[i] = t[i];
 			}
 			delete[] t;
-			if(s > 0){
+			if(s > 1){
 				temp->dim = d==2?0:d+1;
-				if(s % 2 != 0){
-					temp->median.set(mx[s/2], my[s/2], mz[s/2]);
-				}
-				else{
-					temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
-				}
+				// if(s % 2 != 0){
+				// 	temp->median.set(mx[s/2], my[s/2], mz[s/2]);
+				// }
+				// else{
+				// 	temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
+				// }
+				temp->median /= s;
+				// temp->median /= vec3(temp->max[0] + temp->min[0], temp->max[1] + temp->min[1], temp->max[2] + temp->min[2])/2;
 				temp->contained = tt;
 				temp->parent = stack[stackSize-1];
 				temp->within = s;
 				temp->p = temp->median.e[temp->dim];
 				stack[stackSize-1]->l = temp;
-				if(stackSize < list_size-1){
-					stack[stackSize++] = temp;
-					maxSize++;
-					if(stackSize > 3 && s == stack[stackSize-1]->parent->parent->parent->within){
-						stackSize-=3;
-						break;
-					}
-					if(s == 1)
-						stack[stackSize-1]->obj = stack[stackSize-1]->contained[0];
-				}
-				else{
-					stackSize--;
+				stack[stackSize++] = temp;
+				maxSize++;
+				if(stackSize > 2 && s == stack[stackSize-1]->parent->parent->within){
+					stackSize-=3;
 					break;
 				}
 			}
-			else{
-				break;
-			}
-			// printf("%d\n", maxSize);
+			else break;
+			// else --stackSize;
 		}
-		if(stack[stackSize-1]->within > 1 && stack[stackSize-1]->r == nullptr){
+		// while(stackSize > 0 && stack[stackSize-1]->r != nullptr)
+			// stackSize--;
+		if(stack[stackSize-1]->r == nullptr){
 			short d = stack[stackSize-1]->dim;
 			Face** t = new Face*[stack[stackSize-1]->within];
 			int s = 0;
-			// vec3 m;
 			TreeNode* temp = new TreeNode();
-			// vec3 curMed = stack[stackSize-1]->median;
 			for(int i = 0; i < stack[stackSize-1]->within; i++){
 				if(stack[stackSize-1]->contained[i]->median.e[d] >= stack[stackSize-1]->median.e[d]){
 					t[s] = stack[stackSize-1]->contained[i];
-					sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+					// printf("%d r: %p\n", stackSize, t[s]);
+					// sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
+					temp->median += stack[stackSize-1]->contained[i]->median;
 					for(int j = 0; j < 3; j++){
 						if(t[s]->max[j] > temp->max[j])
 							temp->max[j] = t[s]->max[j];
@@ -1335,46 +1266,43 @@ __device__ TriTree* OBJ::toTree(){
 				tt[i] = t[i];
 			}
 			delete[] t;
-			if(s > 0){
+			if(s > 1){
 				temp->dim = d==2?0:d+1;
-				if(s % 2 != 0){
-					temp->median.set(mx[s/2], my[s/2], mz[s/2]);
-				}
-				else{
-					temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
-				}
+				// if(s % 2 != 0){
+				// 	temp->median.set(mx[s/2], my[s/2], mz[s/2]);
+				// }
+				// else{
+				// 	temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
+				// }
+				temp->median /= s;
+				// temp->median /= vec3(temp->max[0] + temp->min[0], temp->max[1] + temp->min[1], temp->max[2] + temp->min[2])/2;
 				temp->contained = tt;
 				temp->parent = stack[stackSize-1];
 				temp->within = s;
 				temp->p = temp->median.e[temp->dim];
 				stack[stackSize-1]->r = temp;
-				if(stackSize < list_size-1){
-					stack[stackSize++] = temp;
-					maxSize++;
-					if(stackSize > 3 && s == stack[stackSize-1]->parent->parent->parent->within){
-						stackSize-=3;
-						continue;
-					}
-					if(s == 1)
-						stack[stackSize-1]->obj = stack[stackSize-1]->contained[0];
+				stack[stackSize++] = temp;
+				maxSize++;
+				if(stackSize > 2 && s == stack[stackSize-1]->parent->parent->within){
+					stackSize-=3;
+					continue;
 				}
-				else stackSize--;
-				
 			}
 			else stackSize--;
 		}
 		else stackSize--;
-		// printf("%d\n", maxSize);
+		// else stackSize--;
 	}
 
-	TriTree* tree = new TriTree;
+	TriTree* tree = new TriTree();
 	tree->head = stack[0];
 	tree->numNodes = maxSize;
+	printf("%d\n", maxSize);
 	return tree;
 }
 
 __device__ void TriTree::print(){
-	TreeNode* cur = head;//, *t = nullptr;
+	TreeNode* cur = head;
 	printf("numNodes: %d\n", numNodes);
 	TreeNode** stack = new TreeNode*[numNodes];
 	int stackSize = 0;
@@ -1398,24 +1326,3 @@ __device__ void TriTree::print(){
 	}	while(stackSize > 0);
 	delete[] stack;
 }
-
-// hitable* TriTree::copyToDevice(){
-// 	return descendCopy(head);
-// }
-
-// TreeNode* TriTree::descendCopy(TreeNode* in){
-// 	TreeNode *r, *l, *par;
-// 	TreeNode* d_in;
-// 	Face* d_obj;
-// 	TreeNode *oldR = in->r, *oldL = in->l;
-// 	if(in->r != nullptr){
-// 		r = descendCopy(in->r);
-// 	}	else r = nullptr;
-// 	if(in->l != nullptr){
-// 		l = descendCopy(in->l);
-// 	}	else l = nullptr;
-// 	cudaMalloc((void**)&d_obj, sizeof(Face));
-// 	cudaMemcpy(Face)
-// 	cudaMalloc((void**)&d_in, sizeof(TriNode));
-// 	// cudaMemcpy()
-// }

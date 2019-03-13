@@ -1,3 +1,5 @@
+//Aidan Ryan, 2019
+
 #include "tracer.h"
 // #include "objRead.h"
 
@@ -9,86 +11,15 @@
 
 using namespace OPENEXR_IMF_NAMESPACE;
 using namespace cooperative_groups;
-__global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, OBJ** objs, int numOBJs, int cluster){
+__global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, OBJ** objs, int numOBJs, int cluster){	//TODO: rewrite tree construction with parallel tree construction (array of size numObjs to hold current nodes, have multiple threads operating on different branches at same depth)
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	if(index==0){
-		// hitable* list[2];
-		// list[0] = new sphere(vec3(0,0,-1), 0.5, new lambertian(vec3(0.8f, 0.3f, 0.3f)));
-		// list[1] = new sphere(vec3(0,-100.5, -1), 100, new lambertian(vec3(0.8f, 0.8f, 0.0f)));
-		// list[2] = new sphere(vec3(1, 0, -1), 0.5, new metal(vec3(0.8f, 0.6f, 0.2f), 0.0f));
-		// // list[3] = new sphere(vec3(-1, 0, -1), 0.5, new metal(vec3(0.8f, 0.8f, 0.8f), 1.0f))
-		// list[5] = new sphere(vec3(-1, 0, -1), 0.5f, new dielectric(1.5f));
-		// list[3] = new sphere(vec3(2, 1, 0), 0.5f, new light(vec3(2, 2, 2)));
-		// list[4] = new sphere(vec3(-1, 1, -2), 0.5f, new light(vec3(4, 2, 2)));
-		// list[4] = new sphere(vec3(0,1,-1), 0.5f, new metal(vec3(0.8f, 0.8f, 0.9f), 0));
-		// int totalFaces = 0;
-		// for(int j = 0; j < numOBJs; j++){
-		// 	totalFaces += objs[j]->numFaces;
-		// }
-		// hitable** worldFaces = new hitable*[totalFaces];
-		// int zz = 0;
-		// for(int j = 0; j < numOBJs; j++){
-		// 	for(int z = 0; z < objs[j]->numFaces; z++){
-		// 		worldFaces[zz] = new Face(objs[j]->object[z]);
-		// 	}
-		// }
-		// printf("Trying to create hitable_list\n");
-		// printf("numObjs: %d\n", numOBJs);
-		
-		// *world = new hitable_list(objs, numOBJs, wSize);
-		// TriTree* t = new TriTree();
 		*world = new hitable_list(wSize+1);
-		// (*world)->list[0] = new TriTree();
-		// printf("%d\n", (*world)->list_size);
-		// printf("%d\n", numOBJs);
 		printf("launching toTree\n");
 		for(int i = 0; i < numOBJs; i++){
-			// for(int j =0; j < objs[i]->numFaces; j++){
-			// 	// printf("inserting\n");
-			// 	if(j % 1000 == 0)
-			// 		printf("%d / %d\n", j, objs[i]->numFaces);
-			// 	t->insert(new Face(objs[i]->object[j], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f))));
-			// }
-
-			// printf("%p\n", objs[i]->object[0]);
-			// printf("Trying to launch\n");
 			TriTree *tt = objs[i]->toTree();
 			(*world)->list[i] = tt;
-			// tt->print();
 		}
-	// }
-	// __syncthreads();
-	// int curIndex = index*cluster;
-	
-	// while(curIndex < (*world)->list_size-wSize){
-	// 	for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size-wSize; i++){
-	// 		// int z = 0;
-	// 		// for(int i = 0; i < n; i++){
-	// 		// 	for(int j = 0; j < in[i]->numFaces; j++){
-	// 		// 		// printf("j: %d\n", j);
-	// 		// 		list[z] = new Face(in[i]->object[j], new light(vec3(4, 2, 2)));
-	// 		// 		// *list[z] = in[z];
-	// 		// 		z++;
-	// 		// 		if(z%10000 == 0)
-	// 		// 			printf("%d\n", z);
-	// 		// 	}
-	// 		// }
-	// 		int totalFaces = 0, offset = 0;
-	// 		for(int j = 0; j < numOBJs; j++){
-	// 			totalFaces += objs[j]->numFaces;
-	// 			if(curIndex+i < totalFaces){
-	// 				for(int z = 0; z < j; z++){
-	// 					offset += objs[j]->numFaces;
-	// 				}
-	// 				(*world)->list[curIndex+i] = new Face(objs[j]->object[curIndex+i-offset], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
-	// 				// printf("%d %p\n", curIndex+i, (*world)->list[curIndex+i]);
-	// 			}
-	// 		}
-	// 	}
-	// 	curIndex += gridDim.x*blockDim.x;
-	// }
-	// __syncthreads();
-	// if(index==0){
 		(*world)->list[(*world)->list_size-10] = new sphere(vec3(4, 4, 0), 2, new lambertian(vec3(0.2f, 0.3f, 0.4f)));
 		(*world)->list[(*world)->list_size-9] = new sphere(vec3(3, 1, 0), 0.5f, new metal(vec3(0.2f, 0.6f, 0.8f), 1.4f));
 		(*world)->list[(*world)->list_size-8] = new sphere(vec3(3, 0, 1), 0.5f, new dielectric(1.5f));
@@ -207,7 +138,6 @@ __global__ void averageImgs(vec3* img, int x, int y, float* r, float* g, float* 
 	int index = threadIdx.x + blockDim.x * blockIdx.x;
 	int pixelNum = index;
 	while(pixelNum < x*y){
-		// fin[pixelNum]/=count;
 		r[pixelNum] = img[pixelNum].r();
 		g[pixelNum] = img[pixelNum].g();
 		b[pixelNum] = img[pixelNum].b();
@@ -220,10 +150,8 @@ __global__ void averageImgs(vec3* img, int x, int y, float* r, float* g, float* 
 __global__ void clearWorld(hitable_list ** world, int cluster){
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	int curIndex = index*cluster;
-	// printf("%d\n", (*world)->list_size);
 	while(curIndex < (*world)->list_size){
 		for(int i = 0; i < cluster && (curIndex+i) < (*world)->list_size; i++){
-			// printf("%d %d\n", index, (curIndex+i));
 			delete (*world)->list[curIndex+i];
 		}
 		curIndex+=gridDim.x*blockDim.x;
@@ -242,12 +170,7 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 	hit_record rec;
 	camera l_cam = cam;
 	curandState l_state;
-	// int block = blockIdx.x;
-	// if(index==0){
-	// 	curRay = new ray();
-	// 	color = new vec3();
-	// }
-	// __shared__ bool aHit[(*world)->list_size];
+	
 	for(int k = blockIdx.x; k < x*y; k+=gridDim.x){
 		l_state = state[k];
 		// g.sync();
@@ -265,15 +188,11 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 				
 				l_cam.get_ray(u, v, curRay[blockIdx.x], &l_state);
 				returned[blockIdx.x] = false;
-				// printf("%d\n", worldSize);
-
-				// printf("%f %f %f\n", curRay->B.x(), curRay->B.y(), curRay->B.z());
 			}
 			__syncthreads();
 			for(int i = 0; i < 10 && !returned[blockIdx.x]; i++){
 				
 				float max = FLT_MAX;
-				// __syncthreads();
 				tRay = curRay[blockIdx.x];
 				bool anyHits = false;
 				for(int j = index; j < worldSize; j+= blockDim.x){
@@ -285,11 +204,8 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 				
 				hits[blockDim.x*blockIdx.x + index] = anyHits;
 				__syncthreads();
-				// int powa;
 				for(unsigned int powa = 2; powa<=blockDim.x; powa=powa<<1){
-					// g.sync();
 					__syncthreads();
-					// powa = blockDim.x/int(powf(2,z));
 					int tp = blockDim.x/powa;
 					if(hits[index+blockIdx.x*blockDim.x])
 						max = hitRec[index+blockIdx.x*blockDim.x].t;
@@ -301,12 +217,10 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 								max = hitRec[j+blockIdx.x*blockDim.x].t;
 								hits[index+blockIdx.x*blockDim.x] = true;
 								hitRec[index+blockIdx.x*blockDim.x] = hitRec[j+blockIdx.x*blockDim.x];
-								// printf("hits\n");
 							}
 						}
 					}
 					__syncthreads();
-					// g.sync();
 				}
 
 				if(index == 0){
@@ -347,6 +261,9 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 						returned[blockIdx.x] = true;
 					}
 				}
+
+//begin old hit detection method, used gpu to traverse through array of triangles/objects in parallel, one pixel per kernel call, rather than current
+//implementation which is one thread/pixel, executing on 512 pixels in parallel
 
 				// for(int j = index; j < worldSize; j+=blockDim.x){
 					
@@ -443,9 +360,6 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 				// }
 				// g.sync();
 				__syncthreads();
-				// if(index == 0)
-					// printf("%d\n", returned[blockIdx.x]);
-
 			}
 			__syncthreads();
 			if(index == 0)
@@ -462,9 +376,6 @@ __global__ void renderRawFaceSearch(int x, int y, int aaSamples, camera cam, vec
 }
 
 int main(int argc, char* argv[]){
-	// printf("%d\n", sizeof(Face));
-
-	// printf("%d\n", argc);
 	size_t totalSize = 0, *curSize = new size_t;
 	int numOBJs = argc-1;
 	OBJ ***d_objs, **objs = new OBJ*[numOBJs], ***h_d_objs;// = new OBJ*[numOBJs];
@@ -486,8 +397,8 @@ int main(int argc, char* argv[]){
 	int x = 200;
 	int y = 100;
 
-	x = 1000;
-	y = 500;
+	// x = 1000;
+	// y = 500;
 	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
@@ -507,14 +418,8 @@ int main(int argc, char* argv[]){
 		totalSize += objs[i]->numFaces*sizeof(TreeNode) + objs[i]->numFaces*objs[i]->numFaces*sizeof(Face*) + objs[i]->numFaces*sizeof(TreeNode*) + numBlocks*numThreads*objs[i]->numFaces*sizeof(TreeNode*) + numBlocks*numThreads*objs[i]->numFaces*sizeof(bool) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3) + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
 		numObjs += objs[i]->numFaces;
 	}
-	// numObjs+=worldSize;
-	// totalSize*=4;
-	// totalSize += 512*2000*sizeof(bool);
-	// totalSize += 512*1000*sizeof(TreeNode*);
 	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
 	for(int i = 0; i < count; i++){
-		// printf("%d\n", i);
-		
 		gpuErrchk(cudaSetDevice(i));
 		gpuErrchk(cudaDeviceSetLimit(cudaLimitMallocHeapSize, totalSize));
 		cudaDeviceSynchronize();
@@ -536,7 +441,6 @@ int main(int argc, char* argv[]){
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
 		for(int j = 0; j < numOBJs; j++){
-			// printf("%d %d\n", i, j);
 			h_d_objs[i][j] = objs[j]->copyToDevice();
 		}
 		cudaMalloc((void**)&d_objs[i], sizeof(OBJ*)*numOBJs);
@@ -550,6 +454,9 @@ int main(int argc, char* argv[]){
 		worldGenerator<<<1,1>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
+
+//leftover from parallel hit detection, one call per pixel
+
 	// printf("Allocating Space for Hit Search\n");
 	cudaDeviceSynchronize();
 	// bool** hits = new bool*[count];
@@ -591,6 +498,9 @@ int main(int argc, char* argv[]){
 		// getColor<<<numBlocks, numThreads>>>(x, y, aaSamples/count, cam, d_img[i], d_ray[i], world[i], state[i], color[i], hitRec[i], hits[i], cuRet[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
 		imgBuf[i] = new vec3[x*y];
 	}
+
+//leftover from parallel hit detection, also experimenting with multithreading GPU memory copies
+
 	// random_device rd;
 	// mt19937 gen(rd());
 	// uniform_real_distribution<>dis(0,1);
@@ -598,7 +508,7 @@ int main(int argc, char* argv[]){
 	// // color(const ray& r, hitable_list* world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits)
 	
 	
-	// #pragma omp parallel for//openmp parallelization for cpu instances
+	// #pragma omp parallel for 			//openmp parallelization for cpu instances
 	// for(int j = 0; j < x*y; j+=count){
 	// 		// vec3 col, *color, *d_color;
 	// 		// color = new vec3();
@@ -823,12 +733,6 @@ int main(int argc, char* argv[]){
 	frameBuffer.insert("A", Slice(FLOAT, (char*)a, sizeof(*a)*1, sizeof(*a)*x));
 	file.setFrameBuffer(frameBuffer);
 	file.writePixels(y);
-	
-	// cout<<"P3\n"<<x<<' '<<y<<"\n255\n";
-	// for(int i = 0; i < x*y; i++){
-	// 	cout<<img[i].r()<<' '<<img[i].g()<<' '<<img[i].b()<<'\n';
-	// }
-	// delete[] imgBuf;
 
 	delete[] r;
 	delete[] g;

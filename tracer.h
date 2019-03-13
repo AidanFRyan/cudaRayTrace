@@ -1,3 +1,5 @@
+//Aidan Ryan, 2019
+
 #ifndef TRACER_H
 #define TRACER_H
 
@@ -220,7 +222,6 @@ public:
 private:
 	material* surface;
 	vec3 attenuation;
-	// int hits;
 	float depth;
 };
 
@@ -257,7 +258,6 @@ public:
     int numFaces, faceBuffer;
 };
 
-// class TriTree;
 class TreeNode : public hitable{
 	friend class TriTree;
 	friend class OBJ;
@@ -267,14 +267,12 @@ public:
 	__host__ __device__ TreeNode(Face* in, TreeNode* par);
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 	__device__ bool withinBB(const vec3& p);
-	// __device__ void insert(Face* in);
 private:
 	Face* obj, **contained;
 	int within;
 	float max[3], min[3], p;
 	short dim;
 	vec3 median;
-	// hitable* copyToDevice();	
 };
 
 class TriTree : public hitable{
@@ -286,12 +284,10 @@ public:
 	hitable* copyToDevice();
 	__device__ void print();
 private:
-	__device__ bool positionOnPlane(const ray& r, TreeNode* n, vec3& poi) const;
+	__device__ bool boxIntersect(const ray& r, TreeNode* n) const;
 	int numNodes;
 	TreeNode* head;
 	TreeNode* descendCopy(TreeNode*);
-
-	// friend class TreeNode;
 };
 
 
