@@ -4,6 +4,6 @@ Adaptation of Peter Shirley's Raytacing in a Weekend and Nvidia's blog post on C
 
 Images from earlier versions:
 
-![Screenshot](IMG3111.JPG)
+![Screenshot](IMG_3111.JPG)
 
-![Screenshot](IMG3144.JPG)
+![Screenshot](IMG_3144.JPG)
