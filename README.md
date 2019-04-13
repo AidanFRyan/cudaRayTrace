@@ -7,3 +7,5 @@ Images from earlier versions:
 ![Screenshot](IMG_3111.JPG)
 
 ![Screenshot](IMG_3144.JPG)
+
+![Screenshot](cap.jpg)
