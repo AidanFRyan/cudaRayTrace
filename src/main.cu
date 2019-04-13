@@ -30,24 +30,24 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 1, numThreads = 512;
+	int numBlocks = 32, numThreads = 512;
 	
 	int x = 200;
 	int y = 100;
 
 	x = 1000;
 	y = 500;
-	int aaSamples = 32;
+	int aaSamples = 512;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
 	imgBuf = new vec3*[count];
 	d_objs = new OBJ**[count];
 	h_d_objs = new OBJ**[count];
-	vec3 lookFrom(5, 2, 5);
+	vec3 lookFrom(5,2,5);
 	vec3 lookAt(0,0,0);
 	float dist = (lookFrom-lookAt).length();
-	float ap = 0.0f;
+	float ap = 0;
 	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 60, float(x)/float(y), ap, dist);
 	// hitable *list[2];
 	int numObjs = worldSize;

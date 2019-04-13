@@ -13,7 +13,8 @@ __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wS
             float min[3];
             float max[3];
             for(int j = 0; j < tArr[i][0]->within; j++){
-                tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
+				// tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
+                tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new sss(new lambertian(vec3(0.0f, 0.2f, 0.0f)), 100.0f, vec3(1.0f, 0.25f, 0.2f)));
                 tArr[i][0]->median += tArr[i][0]->contained[j]->median;
                 if(j == 0){
                     for(int l = 0; l < 3; ++l){
@@ -74,10 +75,10 @@ __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wS
     (*world)->list[(*world)->list_size-6] = new sphere(vec3(5, -2, 5), 0.5f, new dielectric(1.78f));
 
     (*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 1, new lambertian(vec3(0.2f, 1, 0.4f)));
-    (*world)->list[(*world)->list_size-4] = new sphere(vec3(0, 1, 0), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
+    (*world)->list[(*world)->list_size-4] = new sphere(vec3(2, -1, 2), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
     (*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 4), 0.5f, new dielectric(1.5f));
     (*world)->list[(*world)->list_size-2] = new sphere(vec3(2, -1, 0), 0.5f, new lambertian(vec3(1.0f, 0.78f, 0.8f)));
-    (*world)->list[(*world)->list_size-1] = new sphere(vec3(-5, -5, -5), 3, new light(vec3(6, 6, 6)));
+    (*world)->list[(*world)->list_size-1] = new sphere(vec3(-10, -4, -10), 3, new light(vec3(6, 6, 6)));
 }
 
 __global__ void initRand(int n, int cluster, int aa, curandState* state){

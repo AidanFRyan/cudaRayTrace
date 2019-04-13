@@ -216,7 +216,7 @@ public:
 
 class sss : public material{
 public:
-	__device__ sss(material* surf, const float& d, const vec3& internal);
+	__device__ sss(material* surf, const float& d, const vec3& internalColor);
 	__device__ virtual bool scatter(const ray& impacting, const hit_record& rec, vec3& att, ray& scattered, curandState* state) const;
 
 private:

@@ -889,19 +889,18 @@ __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& 
 		vec3 tAtt;
 		ray tScattered;
 		surface->scatter(impacting, rec, tAtt, tScattered, state);
-		do{
+		do{	//exiting ray goes out but in a random direction
 			temp = random_in_unit_sphere(state);
 		}	while(dot(temp, rec.normal) <= 0);
-		scattered = ray(rec.p, impacting.direction() + temp);
-		float l = depth/(rec.p - impacting.origin()).length();
-		if(l > 1)
-			l = 1;
-		att = vec3(l, l, l);
-		att = tAtt;
-		att /= 2;
+		scattered = ray(rec.p, impacting.direction() + temp);	//ray should go from point of impact in original direction plus some random amount in that general direction
+		float l = (rec.p - impacting.origin()).length()/depth;
+		if(l > 1.0f)
+			l = 1.0f;
+		att = tAtt+vec3(1-l, 1-l, 1-l)/2;
 		return true;
 	}
-	else if(curand_uniform(state) > 0.5f){//determines if reflecting off surface
+	else
+	if(curand_uniform(state) < 0.6f){//determines if reflecting off surface
 		return surface->scatter(impacting, rec, att, scattered, state);
 	}
 	else{//or going inside
