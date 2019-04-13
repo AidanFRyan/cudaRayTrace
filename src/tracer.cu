@@ -953,10 +953,47 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 }
 
 __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{
-	if(obj != nullptr){
-		return obj->hit(r, tmin, tmax, rec);
+	// if(threadIdx.x == 0)printf("recursion!\n");
+	bool anyhit = false;
+	// float rT = tmax, lT = tmax;
+	// hit_record rr, lr;
+	if(this->r != nullptr && this->r->boxIntersect(r)){
+		float rT = tmax;
+		hit_record rr;
+		if(this->r->hit(r, tmin, rT, rr)){
+			if(rT < tmax){
+				rec = rr;
+				tmax = rT;
+				anyhit = true;
+			}
+		}
 	}
-	return false;
+	if(this->l != nullptr && this->l->boxIntersect(r)){
+		float lT = tmax;
+		hit_record lr;
+		if(this->l->hit(r, tmin, lT, lr)){
+			if(lT < tmax){
+				rec = lr;
+				tmax = lT;
+				anyhit = true;
+			}
+		}
+	}
+	
+	if(this->l == nullptr && this->r == nullptr){
+		float closest = tmax;
+		hit_record temprec;
+			for(int i = 0; i < within; i++){
+				if(contained[i]->hit(r, tmin, closest, temprec)){
+					if(closest < tmax){
+						rec = temprec;
+						tmax = closest;
+						anyhit = true;
+					}
+				}
+			}
+	}
+	return anyhit;
 }
 
 __device__ bool TreeNode::withinBB(const vec3& p){
@@ -1026,7 +1063,7 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
     diff[1] = p - verts[1];
 	diff[2] = p - verts[2];
 
-	for(int i = 0; i < 3; i++){
+	for(int i = 0; i < 3; i++){	//check if hit inside triangle (will be negative if (v0-v1) x (p-verts) is opposite direction of normal)
         if(dot(surfNorm, cross(e[i], diff[i])) < 0){
 			return false;
 		}
@@ -1043,11 +1080,15 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
     return false;
 }
 
-__device__ bool TriTree::boxIntersect(const ray& r, TreeNode* n) const {	//check for intersection with bounding box of triangles
+//trying box intersect from Williams, Barrus, Morley, and Shirley
+__device__ bool TreeNode::boxIntersect(const ray& r) const {	//check for intersection with bounding box of triangles
+
 	float tmax[3], tmin[3];
 	for(int i = 0; i < 3; i++){
-		tmax[i] = (n->max[i] - r.origin().e[i]) / r.direction().e[i];
-		tmin[i] = (n->min[i] - r.origin().e[i]) / r.direction().e[i];
+		tmax[i] = (this->max[i] - r.origin().e[i]) / r.direction().e[i];
+		tmin[i] = (this->min[i] - r.origin().e[i]) / r.direction().e[i];
+		
+		
 		if(tmax[i] < tmin[i]){
 			float t = tmax[i];
 			tmax[i] = tmin[i];
@@ -1067,52 +1108,6 @@ __device__ bool TriTree::boxIntersect(const ray& r, TreeNode* n) const {	//check
 	return true;
 }
 
-//issue with recursion on GPUs, nvcc cannot compile with heap size for true recursive functions. Emulating with stack of nodes to traverse through tree with
-
-__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//issue traversing through tree on hit search, some triangles get lost when they intersect over x axis (repeated on box and to a lesser extent on teapot)
-	TreeNode* cur = head;
-	TreeNode** stack = new TreeNode*[numNodes];
-	int stackSize = 0;
-	bool anyhit = false;
-	hit_record temprec;
-	float closest = tmax;
-	do{
-		while(cur != nullptr){
-			stack[stackSize++] = cur;
-			if(cur->l == nullptr && cur->r == nullptr){
-				for(int i = 0; i < cur->within; i++){
-					if(cur->contained[i]->hit(r, tmin, closest, temprec)){
-						if(closest < tmax){
-							rec = temprec;
-							tmax = closest;
-							anyhit = true;
-						}
-					}
-				}
-				break;
-			}
-			else if(cur->l != nullptr && boxIntersect(r, cur->l)){
-			 	// if(threadIdx.x == 0)printf("%d left\n", stackSize);
-			 	cur = cur->l;
-			}
-			else {
-				break;
-			}
-		}
-		while(stackSize > 0 && (cur->r == nullptr || !boxIntersect(r, cur->r))){
-			// if(threadIdx.x==0)printf("%d back\n", stackSize);
-			cur = stack[--stackSize];
-			
-		}
-		if(cur->r != nullptr && boxIntersect(r, cur->r)){
-			// if(threadIdx.x == 0)printf("%d right\n", stackSize);
-			cur = cur->r;
-		}
-	}while(stackSize > 0);
-	// if(threadIdx.x==0)printf("done checking\n");
-	delete[] stack;
-	return anyhit;
-}
 
 __device__ void sortInsertion(int max, float* mx, float* my, float* mz, const vec3& med){ //need to track indices of mx, my, mz in toTree to maintain initial sort and prevent running n^2 on tree construction
 	const float *median = med.e;
@@ -1160,147 +1155,6 @@ __device__ void sortInsertion(int max, float* mx, float* my, float* mz, const ve
 	}
 }
 
-__device__ TriTree* OBJ::toTree(){	//currently working through issue with missing tris, believe issue lies in backtracking of stack in tree construction
-	int list_size = numFaces;
-	TreeNode** stack = new TreeNode*[list_size];
-	unsigned int stackSize = 0, maxSize = 1;
-	stack[stackSize++] = new TreeNode;
-	stack[stackSize-1]->contained = new Face*[list_size];
-	// float *mx = new float[list_size], *my = new float[list_size], *mz = new float[list_size];
-	// vec3 med;
-	for(int i = 0; i < list_size; i++){
-		stack[stackSize-1]->contained[i] = new Face(object[i], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
-		// stack[stackSize-1]->contained[i] = new Face(object[i], new sss( new lambertian(vec3(0.0f, 0.2f, 0.0f)), 0.05f, vec3(1.0f, 0.25f, 0.2f)));
-		stack[stackSize-1]->median += stack[stackSize-1]->contained[i]->median;
-		// sortInsertion(i, mx, my, mz, stack[stackSize-1]->contained[i]->median);
-		// printf("%f %f %f\n", stack[stackSize-1]->median.x(), stack[stackSize-1]->median.y(), stack[stackSize-1]->median.z());
-	}
-	// if(list_size % 2 != 0){
-	// 	stack[stackSize-1]->median.set(mx[list_size/2], my[list_size/2], mz[list_size/2]);
-	// }
-	// else{
-	// 	stack[stackSize-1]->median.set((mx[list_size/2]+mx[list_size/2-1])/2, (my[list_size/2]+my[list_size/2-1])/2, (mz[list_size/2]+mz[list_size/2-1])/2);
-	// }
-	// printf("%f %f %f\n", stack[stackSize-1]->median.x(), stack[stackSize-1]->median.y(), stack[stackSize-1]->median.z());
-	// stack[stackSize-1]->median /= vec3(stack[stackSize-1]->max[0] + stack[stackSize-1]->min[0], stack[stackSize-1]->max[1] + stack[stackSize-1]->min[1], stack[stackSize-1]->max[2] + stack[stackSize-1]->min[2])/2;
-	stack[stackSize-1]->within = list_size;
-	stack[stackSize-1]->p = stack[stackSize-1]->median[stack[stackSize-1]->dim];
-	stack[stackSize-1]->median /= list_size;
-
-	// printf("%f %f %f\n", stack[stackSize-1]->median.x(), stack[stackSize-1]->median.y(), stack[stackSize-1]->median.z());
-	while(stackSize > 0){
-		while(stack[stackSize-1]->l == nullptr){
-			short d = stack[stackSize-1]->dim;
-			Face** t = new Face*[stack[stackSize-1]->within];
-			int s = 0;
-			TreeNode* temp = new TreeNode();
-			for(int i = 0; i < stack[stackSize-1]->within; i++){
-				if(stack[stackSize-1]->contained[i]->median.e[d] < stack[stackSize-1]->median.e[d]){
-					t[s] = stack[stackSize-1]->contained[i];
-					// sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
-					// printf("%d l: %p\n", stackSize, t[s]);
-					temp->median += stack[stackSize-1]->contained[i]->median;
-					for(int j = 0; j < 3; j++){
-						if(t[s]->max[j] > temp->max[j])
-							temp->max[j] = t[s]->max[j];
-						if(t[s]->min[j] < temp->min[j])
-							temp->min[j] = t[s]->min[j];
-					}
-					s++;
-				}
-			}
-			Face** tt = new Face*[s];
-			for(int i = 0; i < s; i++){
-				tt[i] = t[i];
-			}
-			delete[] t;
-			if(s > 1){
-				temp->dim = d==2?0:d+1;
-				// if(s % 2 != 0){
-				// 	temp->median.set(mx[s/2], my[s/2], mz[s/2]);
-				// }
-				// else{
-				// 	temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
-				// }
-				temp->median /= s;
-				// temp->median /= vec3(temp->max[0] + temp->min[0], temp->max[1] + temp->min[1], temp->max[2] + temp->min[2])/2;
-				temp->contained = tt;
-				temp->parent = stack[stackSize-1];
-				temp->within = s;
-				temp->p = temp->median.e[temp->dim];
-				stack[stackSize-1]->l = temp;
-				stack[stackSize++] = temp;
-				maxSize++;
-				if(stackSize > 2 && s == stack[stackSize-1]->parent->parent->within){
-					stackSize-=3;
-					break;
-				}
-			}
-			else break;
-			// else --stackSize;
-		}
-		// while(stackSize > 0 && stack[stackSize-1]->r != nullptr)
-			// stackSize--;
-		if(stack[stackSize-1]->r == nullptr){
-			short d = stack[stackSize-1]->dim;
-			Face** t = new Face*[stack[stackSize-1]->within];
-			int s = 0;
-			TreeNode* temp = new TreeNode();
-			for(int i = 0; i < stack[stackSize-1]->within; i++){
-				if(stack[stackSize-1]->contained[i]->median.e[d] >= stack[stackSize-1]->median.e[d]){
-					t[s] = stack[stackSize-1]->contained[i];
-					// printf("%d r: %p\n", stackSize, t[s]);
-					// sortInsertion(s, mx, my, mz, stack[stackSize-1]->contained[i]->median);
-					temp->median += stack[stackSize-1]->contained[i]->median;
-					for(int j = 0; j < 3; j++){
-						if(t[s]->max[j] > temp->max[j])
-							temp->max[j] = t[s]->max[j];
-						if(t[s]->min[j] < temp->min[j])
-							temp->min[j] = t[s]->min[j];
-					}
-					s++;
-				}
-			}
-			Face** tt = new Face*[s];
-			for(int i = 0; i < s; i++){
-				tt[i] = t[i];
-			}
-			delete[] t;
-			if(s > 1){
-				temp->dim = d==2?0:d+1;
-				// if(s % 2 != 0){
-				// 	temp->median.set(mx[s/2], my[s/2], mz[s/2]);
-				// }
-				// else{
-				// 	temp->median.set((mx[s/2]+mx[s/2-1])/2, (my[s/2]+my[s/2-1])/2, (mz[s/2]+mz[s/2-1])/2);
-				// }
-				temp->median /= s;
-				// temp->median /= vec3(temp->max[0] + temp->min[0], temp->max[1] + temp->min[1], temp->max[2] + temp->min[2])/2;
-				temp->contained = tt;
-				temp->parent = stack[stackSize-1];
-				temp->within = s;
-				temp->p = temp->median.e[temp->dim];
-				stack[stackSize-1]->r = temp;
-				stack[stackSize++] = temp;
-				maxSize++;
-				if(stackSize > 2 && s == stack[stackSize-1]->parent->parent->within){
-					stackSize-=3;
-					continue;
-				}
-			}
-			else stackSize--;
-		}
-		else stackSize--;
-		// else stackSize--;
-	}
-
-	TriTree* tree = new TriTree();
-	tree->head = stack[0];
-	tree->numNodes = maxSize;
-	printf("%d\n", maxSize);
-	return tree;
-}
-
 __device__ void TriTree::print(){
 	TreeNode* cur = head;
 	printf("numNodes: %d\n", numNodes);
@@ -1325,4 +1179,91 @@ __device__ void TriTree::print(){
 		}
 	}	while(stackSize > 0);
 	delete[] stack;
+}
+
+__device__ TreeNode* TreeNode::lt(){
+	TreeNode* temp = nullptr;
+	Face** t = new Face*[within];
+	unsigned int w = 0;
+	float m[3], ma[3], mi[3];
+	for(int i = 0; i < 3; i++){
+		ma[i] = FLT_MIN;
+		mi[i] = FLT_MAX;
+	}
+	for(int i = 0; i < within; i++){
+		if(contained[i]->median[dim] < median[dim]){
+			t[w] = contained[i];
+			++w;
+			for(int l = 0; l < 3; ++l){
+				m[l]+=contained[i]->median[l];
+				if(contained[i]->max[l] > ma[l])
+					ma[l] = contained[i]->max[l];
+				if(contained[i]->min[l] < mi[l])
+					mi[l] = contained[i]->min[l];
+			}
+		}
+	}
+	if(w>0){
+		temp = new TreeNode();
+		temp->contained = new Face*[w];
+		temp->within = w;
+		l = temp;
+		for(int i = 0; i < 3; ++i){
+			temp->median[i] = m[i]/w;
+			temp->max[i] = ma[i];
+			temp->min[i] = mi[i];
+		}
+		for(int i = 0; i < w; i++){
+			temp->contained[i] = t[i];
+		}
+		temp->dim = dim < 2 ? dim+1 : 0;
+	}
+	delete[] t;
+	return temp;
+}
+__device__ TreeNode* TreeNode::gt(){
+	TreeNode* temp = nullptr;
+	Face** t = new Face*[within];
+	unsigned int w = 0;
+	float m[3], ma[3], mi[3];
+	for(int i = 0; i < 3; i++){
+		ma[i] = FLT_MIN;
+		mi[i] = FLT_MAX;
+	}
+	for(int i = 0; i < within; i++){
+		if(contained[i]->median[dim] >= median[dim]){
+			t[w] = contained[i];
+			++w;
+			for(int l = 0; l < 3; ++l){
+				m[l]+=contained[i]->median[l];
+				if(contained[i]->max[l] > ma[l])
+					ma[l] = contained[i]->max[l];
+				if(contained[i]->min[l] < mi[l])
+					mi[l] = contained[i]->min[l];
+			}
+		}
+	}
+	if(w>0){
+		temp = new TreeNode();
+		temp->contained = new Face*[w];
+		temp->within = w;
+		r = temp;
+		for(int i = 0; i < 3; ++i){
+			temp->median[i] = m[i]/w;
+			temp->max[i] = ma[i];
+			temp->min[i] = mi[i];
+		}
+		for(int i = 0; i < w; i++){
+			temp->contained[i] = t[i];
+		}
+		temp->dim = dim < 2 ? dim+1 : 0;
+	}
+	delete[] t;
+	return temp;
+}
+
+//issue with recursion on GPUs, nvcc cannot compile with stack size for true recursive functions. Emulating with stack of nodes to traverse through tree with
+
+__device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//issue traversing through tree on hit search, some triangles get lost when they intersect over x axis (repeated on box and to a lesser extent on teapot)
+	return head->hit(r, tmin, tmax, rec);
 }

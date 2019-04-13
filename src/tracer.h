@@ -132,7 +132,7 @@ public:
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec, int index);
 	__device__ hitable_list(OBJ **list, int n, int additional);
 	void copyDevice();
-	__device__ TriTree* toTree();
+	// __device__ TriTree* toTree();
 
 	hitable **list, **d_list;
 	hitable_list* d_world;
@@ -267,12 +267,15 @@ public:
 	__host__ __device__ TreeNode(Face* in, TreeNode* par);
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 	__device__ bool withinBB(const vec3& p);
-private:
+	__device__ TreeNode* lt();
+	__device__ TreeNode* gt();
+// private:
 	Face* obj, **contained;
 	int within;
 	float max[3], min[3], p;
 	short dim;
 	vec3 median;
+	__device__ bool boxIntersect(const ray& r) const;
 };
 
 class TriTree : public hitable{
@@ -283,12 +286,14 @@ public:
 	__device__ virtual bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
 	hitable* copyToDevice();
 	__device__ void print();
-private:
-	__device__ bool boxIntersect(const ray& r, TreeNode* n) const;
+// private:
+	
 	int numNodes;
 	TreeNode* head;
 	TreeNode* descendCopy(TreeNode*);
 };
+
+
 
 
 #endif
