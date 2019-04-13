@@ -35,8 +35,8 @@ int main(int argc, char* argv[]){
 	int x = 200;
 	int y = 100;
 
-	x = 1000;
-	y = 500;
+	// x = 1000;
+	// y = 500;
 	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
@@ -104,43 +104,19 @@ int main(int argc, char* argv[]){
 		// worldGenerator<<<1,1>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}
-
-//leftover from parallel hit detection, one call per pixel
-
-	// printf("Allocating Space for Hit Search\n");
 	cudaDeviceSynchronize();
-	// bool** hits = new bool*[count];
-	// hit_record** hitRec = new hit_record*[count];//, ***host_record = new hit_record**[count];
-	// vec3** color = new vec3*[count];
-	// ray** d_ray = new ray*[count];
-	// bool** cuRet = new bool*[count];
-	// for(int i = 0; i < count; i++){
-	// 	cudaSetDevice(i);
-	// 	cudaMalloc((void**)&hitRec[i], sizeof(hit_record)*numThreads*numBlocks);
-	// 	// host_record[i] = new hit_record*[numObjs];
-	// 	cudaMalloc((void**)&hits[i], sizeof(bool)*numThreads*numBlocks);
-	// 	cudaMalloc((void**)&d_ray[i], sizeof(ray)*numBlocks);
-	// 	// cudaMalloc((void**)d_ray[i], sizeof(ray));
-	// 	cudaMalloc((void**)&color[i], numBlocks*sizeof(vec3));
-	// 	// cudaMalloc((void**)color[i], sizeof(vec3));
-	// 	cudaMalloc((void**)&cuRet[i], sizeof(bool)*numBlocks);
-	// 	// ray* tempRay;
-	// 	// cudaMalloc((void**)&tempRay, sizeof(ray));
-	// 	// vec3* d_color;
-	// 	// cudaMalloc((void**)&d_color, sizeof(vec3));
-	// 	// cudaMemcpy(d_ray[i], tempRay, sizeof(ray*), cudaMemcpyHostToDevice);
-	// 	// cudaMemcpy(color[i], d_color, sizeof(vec3*), cudaMemcpyHostToDevice);
-	// }
-	// cudaDeviceSynchronize();
-	// for(int d = 0; d < count; d++){
-	// 	hit_record* temp = new hit_record;
-	// 	for(int i = 0; i < numObjs; i++){
-	// 		cudaSetDevice(d);
-	// 		cudaMalloc((void**)&host_record[d][i], sizeof(hit_record)*numBlocks);
-	// 		// cudaMemcpy(hitRec[d], host_record[d], sizeof())
-	// 	}
-	// 	cudaMemcpy(hitRec[d], host_record[d], sizeof(hit_record*)*numObjs, cudaMemcpyDeviceToHost);
-	// }
+
+	for(int i = 0; i < count; i++){
+		cudaSetDevice(i);
+		for(int j = 0; j < numOBJs; j++){
+			cudaFree(h_d_nodes[i][j]);
+		}
+		delete[] h_d_nodes[i];
+		cudaFree(d_nodes[i]);
+	}
+	delete[] d_nodes;
+	delete[] h_d_nodes;
+
 	printf("Beginning Render\n");
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
@@ -149,154 +125,6 @@ int main(int argc, char* argv[]){
 		imgBuf[i] = new vec3[x*y];
 	}
 
-//leftover from parallel hit detection, also experimenting with multithreading GPU memory copies
-
-	// random_device rd;
-	// mt19937 gen(rd());
-	// uniform_real_distribution<>dis(0,1);
-	// imgBuf = new vec3[x*y];
-	// // color(const ray& r, hitable_list* world, curandState* state, int pixelNum, vec3* color, hit_record* hitRec, bool* hits)
-	
-	
-	// #pragma omp parallel for 			//openmp parallelization for cpu instances
-	// for(int j = 0; j < x*y; j+=count){
-	// 		// vec3 col, *color, *d_color;
-	// 		// color = new vec3();
-	// 	vec3* col = new vec3[count];
-	// 	vec3*** color = new vec3**[count];
-	// 	vec3*** d_color = new vec3**[count];
-	// 	ray *** d_ray = new ray**[count], ***ra = new ray**[count];
-	// 	for(int i = 0; i < count; i++){
-	// 		d_color[i] = new vec3*[aaSamples];
-	// 		color[i] = new vec3*[aaSamples];
-	// 		ra[i] = new ray*[aaSamples];
-	// 		d_ray[i] = new ray*[aaSamples];
-	// 		cudaSetDevice(i);
-	// 		for(int z = 0; z < aaSamples; z++){
-	// 			// vec3* temp = new vec3();
-	// 			// printf("%d %d\n", i, z);
-	// 			cudaMalloc((void**)&d_color[i][z], sizeof(vec3));
-	// 			// d_color[i][z] = temp;
-	// 			// printf("%p\n", d_color[i][z]);
-	// 			color[i][z] = new vec3();
-	// 			cudaMalloc((void**)&d_ray[i][z], sizeof(ray));
-	// 			ra[i][z] = new ray();
-	// 		}
-	// 	}
-	// 	bool** cuRet = new bool*[count];
-	// 	for(int i = 0; i < count; i++){
-	// 		cudaSetDevice(i);
-	// 		cudaMalloc((void**)&cuRet[i], sizeof(bool));
-	// 	}
-	// 	cudaDeviceSynchronize();
-	// 	for(int i = 0; i < count; i++){
-	// 		for(int z = 0; z < aaSamples; z++){
-	// 			cudaSetDevice(i);
-				
-	// 			int pixX = (j+i)%x, pixY = (j+i)/x;
-	// 			// printf("%d %d\n", pixX, pixY);
-	// 			float offsetX = 0, offsetY = 0;
-	// 			if(z<aaSamples/4){
-	// 				// printf("less than 1/4\n");
-	// 				do{offsetX = dis(gen);}	while(offsetX < 0.5);
-	// 				do{offsetY = dis(gen);} while(offsetY < 0.5);
-	// 			}
-	// 			else if(z<aaSamples/2){
-	// 				do{offsetX = dis(gen);}	while(offsetX > 0.5);
-	// 				do{offsetY = dis(gen);} while(offsetY < 0.5);
-	// 			}
-	// 			else if(z<3*aaSamples/4){
-	// 				do{offsetX = dis(gen);}	while(offsetX < 0.5);
-	// 				do{offsetY = dis(gen);} while(offsetY > 0.5);
-	// 			}
-	// 			else{
-	// 				do{offsetX = dis(gen);}	while(offsetX > 0.5);
-	// 				do{offsetY = dis(gen);} while(offsetY > 0.5);
-	// 			}
-	// 			// printf("%d\n", i);
-	// 			float u = (pixX+offsetX) / x, v = (pixY+offsetY) / y;
-	// 			// float u = (pixX+1/aaSamples) / x, v = (pixY+dis(gen)) / y;
-	// 			// ray r;
-				
-	// 			cam.get_ray(u, v, *ra[i][z], gen);
-
-	// 			// printf("%d %d\n", i, z);
-	// 			// ray* d_r;
-	// 			// gpuErrchk(cudaMalloc((void**)&d_r, sizeof(ray)));
-	// 			cudaMemcpy(d_ray[i][z], ra[i][z], sizeof(ray), cudaMemcpyHostToDevice);
-	// 		}
-	// 	}
-	// 	// printf("%d\n", j);
-	// 	cudaDeviceSynchronize();
-	// 	for(int z = 0; z < aaSamples; z++){
-	// 		for(int i = 0; i < count; i++){
-	// 			cudaSetDevice(i);
-	// 			// void** args = new void*[8];
-	// 			// args[0]=(void*)&d_ray[i][z];
-	// 			// args[1]=(void*)&world[i];
-	// 			// args[2]=(void*)&state[i];
-	// 			// args[3]=(void*)&j;
-	// 			// args[4]=(void*)&d_color[i][z];
-	// 			// args[5]=(void*)&hitRec[i];
-	// 			// args[6]=(void*)&hits[i];
-	// 			// args[7]=(void*)&cuRet[i];
-	// 			// cudaLaunchCooperativeKernel((void*)getColor, dim3(1,1,1), dim3(1024,1,1), args);
-	// 			getColor<<<1, 1024>>>(d_ray[i][z], world[i], state, j, d_color[i][z], hitRec[i], hits[i], cuRet[i]);//, d_hits[index], d_recs[index], d_dmax[index]);
-	// 			// cudaMemcpy(color, d_color, sizeof(vec3), cudaMemcpyDeviceToHost);
-	// 			// col += *color;
-	// 			// printf("%d %d\n", i, z);
-	// 		}
-	// 		cudaDeviceSynchronize();
-	// 		// printf("pixel %d\n", j);	
-	// 		// j++;
-	// 	}
-		
-
-	// 	// cudaDeviceSynchronize();
-	// 	for(int i = 0; i < count; i++){
-	// 		cudaSetDevice(i);
-	// 		for(int z = 0; z < aaSamples; z++){
-	// 			// printf("%d %d\n", i, z);
-	// 			// vec3* temp = new vec3();
-	// 			// printf("%p\n", d_color[i][z]);
-	// 			cudaMemcpy(color[i][z], d_color[i][z], sizeof(vec3), cudaMemcpyDeviceToHost);
-	// 			cudaDeviceSynchronize();
-	// 			// color[i][z] = temp;
-	// 		}
-			
-	// 	}
-	// 	for(int i = 0; i < count; i++){
-	// 		for(int z = 0; z < aaSamples; z++){
-	// 			col[i] += *color[i][z];
-	// 		}
-			
-	// 		col[i] /= aaSamples;
-	// 		imgBuf[j+i].set(col[i].x(), col[i].y(), col[i].z());
-	// 		// printf("%f %f %f\n", imgBuf[j+i].r(), imgBuf[j+i].g(), imgBuf[j+i].b());
-	// 	}
-		
-		
-	// 	// cudaDeviceSynchronize();
-	// 	// printf("%f%% finished\n", (float(j+count-1)/(x*y))*100);
-	// 	for(int i = 0; i < count; i++){
-	// 		for(int z = 0; z < aaSamples; z++){
-	// 			cudaFree(d_color[i][z]);
-	// 			delete color[i][z];
-	// 			delete ra[i][z];
-	// 			cudaFree(d_ray[i][z]);
-	// 		}
-	// 		delete[] color[i];
-	// 		delete[] d_color[i];
-	// 		delete[] d_ray[i];
-	// 		delete[] ra[i];	
-	// 	}
-	// 	delete[] col;
-	// 	delete[] color;
-	// 	delete[] d_color;
-	// 	delete[] ra;
-	// 	delete[] d_ray;
-	// }
-	
 	cudaDeviceSynchronize();
 	printf("Done With Rendering, Copying to Disk/Cleaning\n");
 	for(int i = 0; i < count; i++){
