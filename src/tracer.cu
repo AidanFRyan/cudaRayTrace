@@ -1213,7 +1213,7 @@ __device__ TreeNode* TreeNode::lt(){
 			temp->max[i] = ma[i];
 			temp->min[i] = mi[i];
 		}
-		for(int i = 0; i < w; i++){
+		for(int i = 0; i < w; ++i){
 			temp->contained[i] = t[i];
 		}
 		temp->dim = dim < 2 ? dim+1 : 0;
@@ -1226,11 +1226,11 @@ __device__ TreeNode* TreeNode::gt(){
 	Face** t = new Face*[within];
 	unsigned int w = 0;
 	float m[3], ma[3], mi[3];
-	for(int i = 0; i < 3; i++){
+	for(int i = 0; i < 3; ++i){
 		ma[i] = FLT_MIN;
 		mi[i] = FLT_MAX;
 	}
-	for(int i = 0; i < within; i++){
+	for(int i = 0; i < within; ++i){
 		if(contained[i]->median[dim] >= median[dim]){
 			t[w] = contained[i];
 			++w;
@@ -1253,7 +1253,7 @@ __device__ TreeNode* TreeNode::gt(){
 			temp->max[i] = ma[i];
 			temp->min[i] = mi[i];
 		}
-		for(int i = 0; i < w; i++){
+		for(int i = 0; i < w; ++i){
 			temp->contained[i] = t[i];
 		}
 		temp->dim = dim < 2 ? dim+1 : 0;

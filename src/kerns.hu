@@ -80,29 +80,6 @@ __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wS
     (*world)->list[(*world)->list_size-1] = new sphere(vec3(-5, -5, -5), 3, new light(vec3(6, 6, 6)));
 }
 
-// __global__ void worldGenerator(hitable** list, hitable_list** world, int wSize, OBJ** objs, int numOBJs, int cluster){	//TODO: rewrite tree construction with parallel tree construction (array of size numObjs to hold current nodes, have multiple threads operating on different branches at same depth)
-// 	int index = threadIdx.x + blockDim.x*blockIdx.x;
-// 	if(index==0){
-// 		*world = new hitable_list(wSize+1);
-// 		printf("launching toTree\n");
-// 		for(int i = 0; i < numOBJs; i++){
-// 			TriTree *tt = objs[i]->toTree();
-// 			(*world)->list[i] = tt;
-// 		}
-// 		(*world)->list[(*world)->list_size-10] = new sphere(vec3(4, 4, 0), 2, new lambertian(vec3(0.2f, 0.3f, 0.4f)));
-// 		(*world)->list[(*world)->list_size-9] = new sphere(vec3(3, 1, 0), 0.5f, new metal(vec3(0.2f, 0.6f, 0.8f), 1.4f));
-// 		(*world)->list[(*world)->list_size-8] = new sphere(vec3(3, 0, 1), 0.5f, new dielectric(1.5f));
-// 		(*world)->list[(*world)->list_size-7] = new sphere(vec3(5, -2, -5), 0.5f, new lambertian(vec3(0.5f, 0.2f, 0.8f)));
-// 		(*world)->list[(*world)->list_size-6] = new sphere(vec3(5, -2, 5), 0.5f, new dielectric(1.78f));
-
-// 		(*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 1, new lambertian(vec3(0.2f, 1, 0.4f)));
-// 		(*world)->list[(*world)->list_size-4] = new sphere(vec3(0, 1, 0), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
-// 		(*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 4), 0.5f, new dielectric(1.5f));
-// 		(*world)->list[(*world)->list_size-2] = new sphere(vec3(2, -1, 0), 0.5f, new lambertian(vec3(1.0f, 0.78f, 0.8f)));
-// 		(*world)->list[(*world)->list_size-1] = new sphere(vec3(-5, -5, -5), 3, new light(vec3(6, 6, 6)));
-// 	}
-// }
-
 __global__ void initRand(int n, int cluster, int aa, curandState* state){
 	int index = threadIdx.x+blockDim.x*blockIdx.x;
 	int pixelNum = index*cluster;
