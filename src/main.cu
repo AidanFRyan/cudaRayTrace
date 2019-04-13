@@ -2,7 +2,7 @@
 
 #include "tracer.h"
 // #include "objRead.h"
-#include "kerns.hu"
+#include "kerns.h"
 
 #include <OpenEXR/ImfNamespace.h>
 #include <OpenEXR/ImfOutputFile.h>
@@ -35,8 +35,8 @@ int main(int argc, char* argv[]){
 	int x = 200;
 	int y = 100;
 
-	// x = 1000;
-	// y = 500;
+	x = 1000;
+	y = 500;
 	int aaSamples = 32;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);

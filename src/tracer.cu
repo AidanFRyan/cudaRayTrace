@@ -1043,12 +1043,12 @@ __device__ void TriTree::insert(Face* in){ //insert node in tree based on locati
 
 __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_record& rec) const{	//check ray intersection with triangle. Basic math from scratchapixel
 	vec3 one = vec3(1,1,1);
-	for(int i = 0; i < 3; i++){
-		if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
-			break;
-		if(i == 2)
-			return false;
-	}
+	// for(int i = 0; i < 3; i++){
+	// 	if(dot(verts[i], r.direction()) - dot(one, t_max*r.direction()) > 0)
+	// 		break;
+	// 	if(i == 2)
+	// 		return false;
+	// }
 	float NdotDir = dot(surfNorm, r.direction());
 	if(abs(NdotDir) < .001){
 		return false;
@@ -1261,8 +1261,6 @@ __device__ TreeNode* TreeNode::gt(){
 	delete[] t;
 	return temp;
 }
-
-//issue with recursion on GPUs, nvcc cannot compile with stack size for true recursive functions. Emulating with stack of nodes to traverse through tree with
 
 __device__ bool TriTree::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{	//issue traversing through tree on hit search, some triangles get lost when they intersect over x axis (repeated on box and to a lesser extent on teapot)
 	return head->hit(r, tmin, tmax, rec);
