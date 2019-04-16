@@ -915,8 +915,8 @@ __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& 
 }
 
 __device__ TreeNode::TreeNode(){
-	parent = nullptr;
-	obj = nullptr;
+	// parent = nullptr;
+	// obj = nullptr;
 	dim = 0;
 	r = nullptr;
 	l = nullptr;
@@ -932,7 +932,7 @@ __device__ TreeNode::TreeNode(){
 
 __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	l = r = nullptr;
-	parent = par;
+	// parent = par;
 	min[0] = in->min[0];
 	min[1] = in->min[1];
 	min[2] = in->min[2];
@@ -941,14 +941,14 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	max[2] = in->max[2];
 	within = 0;
 	contained = nullptr;
-	if(par != nullptr)
-		dim = parent->dim<2 ? par->dim+1 : 0;
-	else{
-		dim = 0;
-	}
+	// if(par != nullptr)
+	// 	dim = parent->dim<2 ? par->dim+1 : 0;
+	// else{
+	// 	dim = 0;
+	// }
 	median = in->median;
 	p = median[dim];	//note that this is mean value, may have to use median (probably won't matter)
-	obj = in;
+	// obj = in;
 }
 
 __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const{

@@ -262,7 +262,7 @@ class TreeNode : public hitable{
 	friend class TriTree;
 	friend class OBJ;
 public:
-	TreeNode *r, *l, *parent;
+	TreeNode *r, *l;
 	__host__ __device__ TreeNode();
 	__host__ __device__ TreeNode(Face* in, TreeNode* par);
 	__device__ bool hit(const ray& r, const float& tmin, float& tmax, hit_record& rec) const;
@@ -270,8 +270,8 @@ public:
 	__device__ TreeNode* lt();
 	__device__ TreeNode* gt();
 // private:
-	Face* obj, **contained;
-	int within;
+	Face **contained;
+	unsigned int within;
 	float max[3], min[3], p;
 	short dim;
 	vec3 median;

@@ -35,9 +35,10 @@ int main(int argc, char* argv[]){
 	int x = 200;
 	int y = 100;
 
-	x = 1000;
-	y = 500;
+	// x = 1000;
+	// y = 500;
 	int aaSamples = 512;
+	aaSamples=16;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
@@ -56,10 +57,11 @@ int main(int argc, char* argv[]){
 
 	for(int i = 0; i < numOBJs; i++){
 		objs[i] = new OBJ(argv[i+1]);
-		totalSize += 3*objs[i]->numFaces*sizeof(TreeNode) + objs[i]->numFaces*objs[i]->numFaces*sizeof(Face*) + objs[i]->numFaces*sizeof(TreeNode*) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3) + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
+		totalSize += 3*objs[i]->numFaces*sizeof(TreeNode) + objs[i]->numFaces*sizeof(Face) + objs[i]->numFaces*sizeof(sss) + 3*objs[i]->numFaces*sizeof(Face*);
+		// totalSize += 3*objs[i]->numFaces*sizeof(TreeNode) + objs[i]->numFaces*objs[i]->numFaces*sizeof(Face*) + objs[i]->numFaces*sizeof(TreeNode*) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3);// + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
 		numObjs += objs[i]->numFaces;
 	}
-	printf("Beginning World Allocation, allocating %u bytes\n", totalSize);
+	printf("Beginning World Allocation, allocating %f megabytes\n", totalSize/1000000.0);
 	for(int i = 0; i < count; i++){
 		gpuErrchk(cudaSetDevice(i));
 		gpuErrchk(cudaDeviceSetLimit(cudaLimitMallocHeapSize, totalSize));
@@ -71,7 +73,7 @@ int main(int argc, char* argv[]){
 		h_d_objs[i] = new OBJ*[numOBJs];
 	}
 	cudaDeviceSynchronize();
-	printf("Beginning Rand Generation, %u bytes allocated\n", totalSize);
+	printf("Beginning Rand Generation, %f megabytes allocated\n", totalSize/1000000.0);
 	for(int i = 0; i < count; i++){
 		// printf("%d\n", i);
 		gpuErrchk(cudaSetDevice(i));
@@ -100,7 +102,7 @@ int main(int argc, char* argv[]){
 	printf("worldGenerator Beginning\n");
 	for(int i = 0; i < count; i++){
 		cudaSetDevice(i);
-		parTreeConstruction<<<1, 128>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, d_nodes[i]);
+		parTreeConstruction<<<1, 256>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, d_nodes[i]);
 		// worldGenerator<<<1,1>>>(list[i], world[i], worldSize, d_objs[i], numOBJs, 1);
 		cudaMalloc((void**)&d_img[i], sizeof(vec3)*x*y);
 	}

@@ -2,55 +2,76 @@
 #include "tracer.h"
 
 __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wSize, OBJ** objs, int numOBJs, TreeNode*** tArr){
-    if(threadIdx.x == 0){
-        *world = new hitable_list(wSize+1);
-        // printf("in parTree\n");
-        for(unsigned int i = 0; i < numOBJs; i++){
-            // printf("%p\n", tArr[i][0]);
-            tArr[i][0] = new TreeNode;
-            tArr[i][0]->contained = new Face*[objs[i]->numFaces];
-            tArr[i][0]->within = objs[i]->numFaces;
-            float min[3];
-            float max[3];
-            for(int j = 0; j < tArr[i][0]->within; j++){
-				// tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
-                tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new sss(new lambertian(vec3(0.0f, 0.2f, 0.0f)), 100.0f, vec3(1.0f, 0.25f, 0.2f)));
-                tArr[i][0]->median += tArr[i][0]->contained[j]->median;
-                if(j == 0){
-                    for(int l = 0; l < 3; ++l){
-                        min[l] = tArr[i][0]->contained[j]->min[l];
-                        max[l] = tArr[i][0]->contained[j]->max[l];
-                    }
-                }
-                else{
-                    for(int l = 0; l < 3; ++l){
-                        if(tArr[i][0]->contained[j]->min[l] < min[l])
-                            min[l] = tArr[i][0]->contained[j]->min[l];
+    // if(threadIdx.x == 0){
+	*world = new hitable_list(wSize+1);
+	for(unsigned int i = 0; i < numOBJs; i++){
+		if(threadIdx.x == 0){
+			tArr[i][0] = new TreeNode;
+			tArr[i][0]->contained = new Face*[objs[i]->numFaces];
+			tArr[i][0]->within = objs[i]->numFaces;
+		}
+		float min[3];
+		float max[3];
+		__syncthreads();
+		for(int j = threadIdx.x; j < tArr[i][0]->within; j+=blockDim.x){
+			// tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
+			tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new sss(new lambertian(vec3(0.0f, 0.2f, 0.0f)), 100.0f, vec3(1.0f, 0.25f, 0.2f)));
+			// printf("%d %p\n", j, tArr[i][0]->contained[j]);
+			tArr[i][0]->median += tArr[i][0]->contained[j]->median;
+			if(j == 0){
+				for(int l = 0; l < 3; ++l){
+					min[l] = tArr[i][0]->contained[j]->min[l];
+					max[l] = tArr[i][0]->contained[j]->max[l];
+				}
+			}
+			else{
+				for(int l = 0; l < 3; ++l){
+					if(tArr[i][0]->contained[j]->min[l] < min[l])
+						min[l] = tArr[i][0]->contained[j]->min[l];
 
-                        if(tArr[i][0]->contained[j]->max[l] > min[l])
-                            max[l] = tArr[i][0]->contained[j]->max[l];
-                    }
-                }
-            }
-            tArr[i][0]->median /= tArr[i][0]->within;
-            tArr[i][0]->dim = 0;
-            // printf("%p\n", tArr[i][0]);
-        }
+					if(tArr[i][0]->contained[j]->max[l] > min[l])
+						max[l] = tArr[i][0]->contained[j]->max[l];
+				}
+			}
+		}
+		__syncthreads();
+		for(int j = 0; j < blockDim.x; j++){
+			if(threadIdx.x == 0){
+				for(int l = 0; l < 3; l++){
+					tArr[i][0]->max[l] = max[l];
+					tArr[i][0]->min[l] = min[l];
+				}
+			}
+			else if(threadIdx.x == j){
+				for(int l = 0; l < 3; l++){
+					if(max[l] > tArr[i][0]->max[l])
+						tArr[i][0]->max[l] = max[l];
+					if(min[l] < tArr[i][0]->min[l])
+						tArr[i][0]->min[l] = min[l];
+				}
+			}
+			__syncthreads();
+		}
+		tArr[i][0]->median /= tArr[i][0]->within;
+		tArr[i][0]->dim = 0;
+	}
 
-    }
+    // }
+	// printf("%d has arrived\n", threadIdx.x);
+	__syncthreads();
     for(int i = 0; i < numOBJs; i++){
         unsigned int numNodes = 0;
 		for(unsigned int j = 1; j < objs[i]->numFaces; j=j<<1){
 			for(int t = threadIdx.x; t < j; t += blockDim.x){
                 unsigned int index = (j)-1 + t;
-                // printf("%d %d %d\n", (j)-1+t, index, objs[i]->numFaces);
                 TreeNode* curNode = tArr[i][index];
+				// printf("%d %p\n", threadIdx.x, curNode);
                 if(curNode == nullptr){
-                    // printf("curNode is NULL\n");
                     continue;
                 }
                 TreeNode *l = curNode->lt(), *r = curNode->gt();
-                // printf("%d\n", (j<<1) + 2*t-1);
+				if(l != nullptr && r != nullptr)
+					delete[] curNode->contained;
                 tArr[i][(j<<1) + 2*t-1] = l;
                 tArr[i][(j<<1) + 2*t] = r;
                 if(l != nullptr)
@@ -158,8 +179,8 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 			col /= aa;
 			img[pixelNum+i].set(col[0], col[1], col[2]);
 		}
-		// if(threadIdx.x == 0)
-		// 	printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
+		if(threadIdx.x == 0)
+			printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
 		pixelNum += blockDim.x*gridDim.x;
 	}
 }
