@@ -22,7 +22,7 @@ int main(int argc, char* argv[]){
 	curandState** state;
 	hitable *** list;
 	hitable_list ***world;// = new hitable_list(list, 2);
-	int worldSize = 10;
+	int worldSize = 2;
 	int count, firstDevice = 0;
 	gpuErrchk(cudaGetDeviceCount(&count));
 	// printf("numDevices: %d\n", count);
@@ -30,14 +30,14 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 32, numThreads = 512;
+	int numBlocks = 8, numThreads = 512;
 	
 	int x = 200;
 	int y = 100;
 
-	// x = 1000;
-	// y = 500;
-	int aaSamples = 512;
+	x = 1000;
+	y = 500;
+	int aaSamples = 256;
 	aaSamples=16;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
@@ -45,8 +45,8 @@ int main(int argc, char* argv[]){
 	imgBuf = new vec3*[count];
 	d_objs = new OBJ**[count];
 	h_d_objs = new OBJ**[count];
-	vec3 lookFrom(5,2,5);
-	vec3 lookAt(0,0,0);
+	vec3 lookFrom(-10,4,10);
+	vec3 lookAt(0,4,0);
 	float dist = (lookFrom-lookAt).length();
 	float ap = 0;
 	camera cam(lookFrom, lookAt, vec3(0, 1, 0), 60, float(x)/float(y), ap, dist);

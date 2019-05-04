@@ -14,8 +14,9 @@ __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wS
 		float max[3];
 		__syncthreads();
 		for(int j = threadIdx.x; j < tArr[i][0]->within; j+=blockDim.x){
+			tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new dielectric(1.5f));
 			// tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new lambertian(vec3(0.0f, 0.2f, 0.0f)));
-			tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new sss(new lambertian(vec3(0.0f, 0.2f, 0.0f)), 100.0f, vec3(1.0f, 0.25f, 0.2f)));
+			// tArr[i][0]->contained[j] = new Face(objs[i]->object[j], new sss(new lambertian(vec3(0.0f, 0.2f, 0.0f)), 100.0f, vec3(1.0f, 0.25f, 0.2f)));
 			// printf("%d %p\n", j, tArr[i][0]->contained[j]);
 			tArr[i][0]->median += tArr[i][0]->contained[j]->median;
 			if(j == 0){
@@ -89,17 +90,17 @@ __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wS
         }
     }
     
-    (*world)->list[(*world)->list_size-10] = new sphere(vec3(4, 4, 0), 2, new lambertian(vec3(0.2f, 0.3f, 0.4f)));
-    (*world)->list[(*world)->list_size-9] = new sphere(vec3(3, 1, 0), 0.5f, new metal(vec3(0.2f, 0.6f, 0.8f), 1.4f));
-    (*world)->list[(*world)->list_size-8] = new sphere(vec3(3, 0, 1), 0.5f, new dielectric(1.5f));
-    (*world)->list[(*world)->list_size-7] = new sphere(vec3(5, -2, -5), 0.5f, new lambertian(vec3(0.5f, 0.2f, 0.8f)));
-    (*world)->list[(*world)->list_size-6] = new sphere(vec3(5, -2, 5), 0.5f, new dielectric(1.78f));
+    // (*world)->list[(*world)->list_size-10] = new sphere(vec3(4, 4, 0), 2, new lambertian(vec3(0.2f, 0.3f, 0.4f)));
+    // (*world)->list[(*world)->list_size-9] = new sphere(vec3(3, 1, 0), 0.5f, new metal(vec3(0.2f, 0.6f, 0.8f), 1.4f));
+    // (*world)->list[(*world)->list_size-8] = new sphere(vec3(3, 0, 1), 0.5f, new dielectric(1.5f));
+    // (*world)->list[(*world)->list_size-7] = new sphere(vec3(5, -2, -5), 0.5f, new lambertian(vec3(0.5f, 0.2f, 0.8f)));
+    // (*world)->list[(*world)->list_size-6] = new sphere(vec3(5, -2, 5), 0.5f, new dielectric(1.78f));
 
-    (*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 1, new lambertian(vec3(0.2f, 1, 0.4f)));
-    (*world)->list[(*world)->list_size-4] = new sphere(vec3(2, -1, 2), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
-    (*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 0, 4), 0.5f, new dielectric(1.5f));
-    (*world)->list[(*world)->list_size-2] = new sphere(vec3(2, -1, 0), 0.5f, new lambertian(vec3(1.0f, 0.78f, 0.8f)));
-    (*world)->list[(*world)->list_size-1] = new sphere(vec3(-10, -4, -10), 3, new light(vec3(6, 6, 6)));
+    // (*world)->list[(*world)->list_size-5] = new sphere(vec3(-10, 4, 0), 1, new lambertian(vec3(0.2f, 1, 0.4f)));
+    // (*world)->list[(*world)->list_size-4] = new sphere(vec3(2, -1, 2), 0.5f, new metal(vec3(1.0f, 0.78f, 0.8f), 0));
+    // (*world)->list[(*world)->list_size-3] = new sphere(vec3(0, 2, 4), 2, new dielectric(1.5f));
+    (*world)->list[(*world)->list_size-2] = new sphere(vec3(0, -50, 0), 50.0f, new lambertian(vec3(0.2f, 0.2f, 0.2f)));
+    (*world)->list[(*world)->list_size-1] = new sphere(vec3(12, 45, 12), 35, new light(vec3(6, 6, 6)));
 }
 
 __global__ void initRand(int n, int cluster, int aa, curandState* state){
@@ -144,7 +145,7 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}
 
 		}
 		else{
-			// return vec3(0,0,0);
+			return vec3(0,0,0);
 			// printf("to infinity!\n");
 			vec3 unit_direction = unit_vector(curRay.direction());
 			float t = 0.5f*(unit_direction.y()+1.0f);

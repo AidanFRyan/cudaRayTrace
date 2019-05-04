@@ -678,8 +678,10 @@ void OBJ::parse(char* line){	//parse obj line, determine if it's a vertex, face,
                 int count = 0;
                 string petiteBuf = "";
                 for(int j = 0; j < buf.length()+1; j++){
-                    if(buf[j] == '/' || buf[j] == '\0'){
-						set[index*3 + count] = stoi(petiteBuf)-1;
+                    if((buf[j] == '/' || buf[j] == '\0')){
+							// cout<<petiteBuf<<endl;
+						if(!petiteBuf.empty())
+							set[index*3 + count] = stoi(petiteBuf)-1;
 						petiteBuf = "";
                         count++;
                     }
@@ -1048,7 +1050,7 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
 	// 	if(i == 2)
 	// 		return false;
 	// }
-	float NdotDir = dot(surfNorm, r.direction());
+	float NdotDir = dot(surfNorm, r.direction());//ray parallel with tri plane
 	if(abs(NdotDir) < .001){
 		return false;
 	}
