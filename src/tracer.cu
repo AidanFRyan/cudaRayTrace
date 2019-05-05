@@ -214,6 +214,9 @@ __device__ bool sphere::hit(const ray& r, const float& tmin, float& tmax, hit_re
 			rec.t = temp;
 			rec.p = r.p(rec.t);
 			rec.normal = (rec.p - center) / radius;
+			rec.obj = this;
+			// rec.obj = 0;
+			// printf("%p %p\n", rec.obj, this);
 			return true;
 		}
 	}
@@ -474,7 +477,7 @@ __host__ __device__ Face::Face(vec3 v1, vec3 v2, vec3 v3, vec3 t1, vec3 t2, vec3
 	//using average vertex position for triangle
 	median.set((max[0] - min[0])/2, (max[1] - min[1])/2, (max[2] - min[2])/2);
 
-    mat = nullptr;
+    mat = 0;
 	// vec3 avgNorms = unit_vector((n1 + n2 + n3)/3);
 	// printf("verts: %f %f %f, %f %f %f, %f %f %f\n", verts[0].x(), verts[0].y(), verts[0].z(), verts[1].x(), verts[1].y(), verts[1].z(), verts[2].x(), verts[2].y(), verts[2].z());
 	// if(avgNorms.x() != surfNorm.x() || avgNorms.y() != surfNorm.y() || avgNorms.z() != surfNorm.z())
@@ -758,7 +761,7 @@ __host__ __device__ Face::Face(){
 	e[1] = vec3();
 	e[2] = vec3();
 	median = vec3();
-	mat = nullptr;
+	mat = 0;
 	min[0] = 0;
 	min[1] = 0;
 	min[2] = 0;
@@ -917,13 +920,13 @@ __device__ bool sss::scatter(const ray& impacting, const hit_record& rec, vec3& 
 }
 
 __device__ TreeNode::TreeNode(){
-	// parent = nullptr;
-	// obj = nullptr;
+	// parent = 0;
+	// obj = 0;
 	dim = 0;
-	r = nullptr;
-	l = nullptr;
+	r = 0;
+	l = 0;
 	within = 0;
-	contained = nullptr;
+	contained = 0;
 	min[0] = FLT_MAX;
 	min[1] = FLT_MAX;
 	min[2] = FLT_MAX;
@@ -933,7 +936,7 @@ __device__ TreeNode::TreeNode(){
 }
 
 __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
-	l = r = nullptr;
+	l = r = 0;
 	// parent = par;
 	min[0] = in->min[0];
 	min[1] = in->min[1];
@@ -942,8 +945,8 @@ __device__ TreeNode::TreeNode(Face* in, TreeNode* par){
 	max[1] = in->max[1];
 	max[2] = in->max[2];
 	within = 0;
-	contained = nullptr;
-	// if(par != nullptr)
+	contained = 0;
+	// if(par != 0)
 	// 	dim = parent->dim<2 ? par->dim+1 : 0;
 	// else{
 	// 	dim = 0;
@@ -958,7 +961,7 @@ __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_
 	bool anyhit = false;
 	// float rT = tmax, lT = tmax;
 	// hit_record rr, lr;
-	if(this->r != nullptr && this->r->boxIntersect(r)){
+	if(this->r != 0 && this->r->boxIntersect(r)){
 		float rT = tmax;
 		hit_record rr;
 		if(this->r->hit(r, tmin, rT, rr)){
@@ -969,7 +972,7 @@ __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_
 			}
 		}
 	}
-	if(this->l != nullptr && this->l->boxIntersect(r)){
+	if(this->l != 0 && this->l->boxIntersect(r)){
 		float lT = tmax;
 		hit_record lr;
 		if(this->l->hit(r, tmin, lT, lr)){
@@ -981,15 +984,18 @@ __device__ bool TreeNode::hit(const ray& r, const float& tmin, float& tmax, hit_
 		}
 	}
 	
-	if(this->l == nullptr && this->r == nullptr){
+	if(this->l == 0 && this->r == 0){
 		float closest = tmax;
 		hit_record temprec;
 			for(int i = 0; i < within; i++){
+				// printf("%d\n", i);
 				if(contained[i]->hit(r, tmin, closest, temprec)){
 					if(closest < tmax){
 						rec = temprec;
 						tmax = closest;
 						anyhit = true;
+						// rec.obj = contained[i];
+						// rec.obj = 0;
 					}
 				}
 			}
@@ -1007,13 +1013,13 @@ __device__ bool TreeNode::withinBB(const vec3& p){
 
 __device__ TriTree::TriTree(){
 	numNodes = 0;
-	head = nullptr;
+	head = 0;
 }
 
 __device__ void TriTree::insert(Face* in){ //insert node in tree based on location of tri. Doesn't function properly, will remove when finished with KD
-	TreeNode* cur = head, *prev = nullptr;
+	TreeNode* cur = head, *prev = 0;
 	numNodes++;
-	while(cur != nullptr){
+	while(cur != 0){
 		cur->within = 0;
 		for(int i = 0; i < 3; i++){
 			if(in->max[i] > cur->max[i])
@@ -1024,21 +1030,21 @@ __device__ void TriTree::insert(Face* in){ //insert node in tree based on locati
 		prev = cur;
 		if(in->median.e[cur->dim] < cur->p){
 			cur = cur->l;
-			if(cur == nullptr){
+			if(cur == 0){
 				prev->l = new TreeNode(in, prev);
 				break;
 			}
 		}
 		else{
 			cur = cur->r;
-			if(cur == nullptr){
+			if(cur == 0){
 				prev->r = new TreeNode(in, prev);
 				break;
 			}
 		}
 	}
-	if(head == nullptr){
-		head = new TreeNode(in, nullptr);
+	if(head == 0){
+		head = new TreeNode(in, 0);
 	}
 }
 
@@ -1076,6 +1082,9 @@ __device__ bool Face::hit(const ray& r, const float& t_min, float& t_max, hit_re
 		rec.t = temp;
 		rec.p = p;
 		rec.normal = surfNorm;
+		rec.obj = this;
+		// rec.obj = 0;
+		// printf("%p %p\n", rec.obj, this);
         return true;
     }
     return false;
@@ -1162,16 +1171,16 @@ __device__ void TriTree::print(){
 	TreeNode** stack = new TreeNode*[numNodes];
 	int stackSize = 0;
 	do{
-		while(cur != nullptr){
+		while(cur != 0){
 			stack[stackSize++] = cur;
-			if(cur->r == nullptr && cur->l == nullptr){
+			if(cur->r == 0 && cur->l == 0){
 				printf("%p %f %f %f %d\n", cur, cur->median.x(), cur->median.y(), cur->median.z(), cur->within);
 				break;
 			}
 			printf("%p %p %p\n", cur, cur->l, cur->r);
 			cur = cur->l;
 		}
-		while(stackSize > 0 && stack[stackSize-1]->r == nullptr){
+		while(stackSize > 0 && stack[stackSize-1]->r == 0){
 			stackSize--;
 		}
 		if(stackSize > 0){
@@ -1183,7 +1192,7 @@ __device__ void TriTree::print(){
 }
 
 __device__ TreeNode* TreeNode::lt(){
-	TreeNode* temp = nullptr;
+	TreeNode* temp = 0;
 	Face** t = new Face*[within];
 	unsigned int w = 0;
 	float m[3], ma[3], mi[3];
@@ -1223,7 +1232,7 @@ __device__ TreeNode* TreeNode::lt(){
 	return temp;
 }
 __device__ TreeNode* TreeNode::gt(){
-	TreeNode* temp = nullptr;
+	TreeNode* temp = 0;
 	Face** t = new Face*[within];
 	unsigned int w = 0;
 	float m[3], ma[3], mi[3];

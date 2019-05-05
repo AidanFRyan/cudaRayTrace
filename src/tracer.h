@@ -96,11 +96,13 @@ public:
 __host__ __device__ float hit_sphere(const vec3& center, float radius, const ray& r);
 
 class material;
+class hitable;
 struct hit_record{
 	float t;
 	vec3 p;
 	vec3 normal;
 	material *mat;
+	const hitable* obj = 0;
 };
 
 

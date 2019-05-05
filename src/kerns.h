@@ -67,17 +67,17 @@ __global__ void parTreeConstruction(hitable** list, hitable_list** world, int wS
                 unsigned int index = (j)-1 + t;
                 TreeNode* curNode = tArr[i][index];
 				// printf("%d %p\n", threadIdx.x, curNode);
-                if(curNode == nullptr){
+                if(curNode == 0){
                     continue;
                 }
                 TreeNode *l = curNode->lt(), *r = curNode->gt();
-				if(l != nullptr && r != nullptr)
+				if(l != 0 && r != 0)
 					delete[] curNode->contained;
                 tArr[i][(j<<1) + 2*t-1] = l;
                 tArr[i][(j<<1) + 2*t] = r;
-                if(l != nullptr)
+                if(l != 0)
                     ++numNodes;
-                if(r != nullptr)
+                if(r != 0)
                     ++numNodes;
                 
             }
@@ -115,7 +115,7 @@ __global__ void initRand(int n, int cluster, int aa, curandState* state){
 	}
 }
 
-__device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
+__device__ vec3 color(const ray& r, hitable_list* world, curandState* state, bool& notHit, const hitable** hitNodes){//}, bool* d_hits, hit_record* d_recs, float* d_dmax){
 	
 	float max = FLT_MAX;
 	ray curRay = r;
@@ -123,14 +123,17 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}
 	for(int i = 0; i < 10; i++){
 		hit_record rec;
 		// const ray& r, const float& tmin, float& tmax, hit_record& rec, bool* d_hits, hit_record* d_recs, float* d_dmax
-		if(world->hit(curRay, 0.00001f, max, rec)){//}, d_hits, d_recs, d_dmax)){
+		// printf("%d %d %p\n", threadIdx.x, i, hitNodes[i]);
+		if(hitNodes[i] != 0 && hitNodes[i]->hit(curRay, 0.00001f, max, rec)){
+			if(i == 0)	notHit = false;
 			ray scattered;
 			vec3 attenuation;
 			if(rec.mat->emitter){
 				if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
-				// printf("hit a big ol' light\n");
-				curLight *= attenuation;
-				return curLight;
+					if(i == 0)	notHit = true;
+					// printf("hit a big ol' light\n");
+					curLight *= attenuation;
+					return curLight;
 				}
 			}
 			else if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
@@ -142,15 +145,44 @@ __device__ vec3 color(const ray& r, hitable_list* world, curandState* state){//}
 				// printf("hit but not scattered\n");
 				return vec3(0,0,0);
 			}
-
 		}
-		else{
-			return vec3(0,0,0);
-			// printf("to infinity!\n");
-			vec3 unit_direction = unit_vector(curRay.direction());
-			float t = 0.5f*(unit_direction.y()+1.0f);
-			vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
-			return curLight * c;
+		else {
+			for(int j = i; j < 10; j++){
+				hitNodes[j] = 0;
+			}
+			if(world->hit(curRay, 0.00001f, max, rec)){//}, d_hits, d_recs, d_dmax)){
+				hitNodes[i] = rec.obj;
+				if(i == 0)	notHit = false;
+				ray scattered;
+				vec3 attenuation;
+				if(rec.mat->emitter){
+					if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
+						if(i == 0)	notHit = true;
+						// printf("hit a big ol' light\n");
+						curLight *= attenuation;
+						return curLight;
+					}
+				}
+				else if(rec.mat->scatter(r, rec, attenuation, scattered, state)){
+					// printf("scattered\n");
+					curLight *= attenuation;
+					curRay = scattered;
+				}
+				else{
+					// printf("hit but not scattered\n");
+					return vec3(0,0,0);
+				}
+
+			}
+			else{
+				if(i == 0) notHit = true;
+				return vec3(0,0,0);
+				// printf("to infinity!\n");
+				vec3 unit_direction = unit_vector(curRay.direction());
+				float t = 0.5f*(unit_direction.y()+1.0f);
+				vec3 c = (1.0f-t)*vec3(1, 0.7f, 0.6f) + t*vec3(0.5f, 0.2f, 1);
+				return curLight * c;
+			}
 		}
 	}
 	// printf("exceeded bounce count\n");
@@ -161,29 +193,44 @@ __global__ void imageGenerator(int x, int y, int cluster, camera cam, int aa, hi
 	
 	int index = threadIdx.x + blockDim.x*blockIdx.x;
 	int pixelNum = index*cluster;
+	bool notHit;
+	const hitable* hitNodes[10];
 	
 	while(pixelNum < x*y){
+		unsigned short consecutiveNoHits = 0;
+		for(int i = 0; i < 10; ++i){
+			hitNodes[i] = 0;
+		}
 		for(int i = 0; i < cluster && (pixelNum+i) < x*y; i++){
 			float pixX = (pixelNum+i)%x, pixY = (pixelNum+i)/x;
-
-			
-			
+			int achieved = 0;
 			vec3 col;
-			for(int j = 0; j < aa; j++){
+			for(int j = 0; j < aa; ++j, ++achieved){
 				float u, v;
 				u = (pixX+curand_uniform(&state[pixelNum+i])) / x;
 				v = (pixY+curand_uniform(&state[pixelNum+i])) / y;
 				ray r;
 				cam.get_ray(u, v, r, &state[pixelNum+i]);
-				col += color(r, *world, &state[pixelNum+i]);//, d_hits[index], d_recs[index], d_dmax[index]);
+				col += color(r, *world, &state[pixelNum+i], notHit, hitNodes);//, d_hits[index], d_recs[index], d_dmax[index]);
+				if(notHit){
+					consecutiveNoHits++;
+				}
+				else if(consecutiveNoHits){
+					consecutiveNoHits = 0;
+				}
+				if(consecutiveNoHits > 2){
+					// printf("Escaping Early\n");
+					break;
+				}
 			}
-			col /= aa;
+			col /= achieved;
 			img[pixelNum+i].set(col[0], col[1], col[2]);
 		}
 		if(threadIdx.x == 0)
 			printf("%f%% finished\n", (float(pixelNum)/(x*y))*100);
 		pixelNum += blockDim.x*gridDim.x;
 	}
+	// delete[] hitNodes;
 }
 
 __global__ void averageImgs(vec3* fin, vec3** img1, int count, int x, int y, float* r, float* g, float* b, float* a){

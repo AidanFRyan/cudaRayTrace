@@ -30,7 +30,7 @@ int main(int argc, char* argv[]){
 	list = new hitable**[count];
 	world = new hitable_list**[count];
 
-	int numBlocks = 8, numThreads = 512;
+	int numBlocks = 32, numThreads = 512;
 	
 	int x = 200;
 	int y = 100;
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]){
 	x = 1000;
 	y = 500;
 	int aaSamples = 256;
-	aaSamples=16;
+	// aaSamples=16;
 
 	vec3 **imgBuf, **d_img;//, origin(0,0,0), ulc(-2,1,-1), hor(4,0,0), vert(0,2,0);
 	d_img = new vec3*[count];
@@ -61,6 +61,7 @@ int main(int argc, char* argv[]){
 		// totalSize += 3*objs[i]->numFaces*sizeof(TreeNode) + objs[i]->numFaces*objs[i]->numFaces*sizeof(Face*) + objs[i]->numFaces*sizeof(TreeNode*) + objs[i]->numP*sizeof(vec3) + objs[i]->numT*sizeof(vec3) + objs[i]->numN*sizeof(vec3);// + objs[i]->numFaces*sizeof(hit_record);//+objs[i]->numFaces*sizeof(bool)+objs[i]->numFaces*sizeof(hit_record)+objs[i]->numFaces*sizeof(float);// + x*y*(objs[i]->numFaces*(sizeof(bool)+sizeof(hit_record)+sizeof(float)));
 		numObjs += objs[i]->numFaces;
 	}
+	totalSize += numBlocks*numThreads*10*sizeof(hitable*);
 	printf("Beginning World Allocation, allocating %f megabytes\n", totalSize/1000000.0);
 	for(int i = 0; i < count; i++){
 		gpuErrchk(cudaSetDevice(i));
